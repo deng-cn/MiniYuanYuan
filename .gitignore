@@ -1,0 +1,30 @@
+# 编译产物
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# 训练中间产物（不入库）
+out/
+outputs/
+checkpoints/
+dataset/
+*.log
+
+# 解压出来的明文语料（由 corpus/**/*.xz 解出，体积 1.4GB，不入库）
+corpus/raw/*.jsonl
+corpus/new/*.jsonl
+
+# 注意：corpus/ 下的 .xz、corpus/samples 下的 .jsonl、weights/ 下的 .pt 是开源主体，不要忽略

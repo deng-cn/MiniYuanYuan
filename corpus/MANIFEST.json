@@ -1,0 +1,284 @@
+{
+ "stats": {
+  "train_files": 24,
+  "train_lines": 2217679,
+  "train_chars": 719628277,
+  "train_raw_bytes": 1438407556,
+  "train_xz_bytes": 235708928,
+  "new_files": 2,
+  "new_lines": 91155,
+  "new_chars": 27216391,
+  "new_raw_bytes": 57129435,
+  "new_xz_bytes": 8516144,
+  "built_at": "2026-11-26 15:16:09",
+  "elapsed_sec": 188.7,
+  "total_lines": 2308834,
+  "total_chars": 746844668,
+  "total_xz_bytes": 244225072,
+  "note": "new/ 只放训练结束之后才产出、且没有进过训练的语料；原 C10 与 raw/ 中 1123__C10_文字改写与语言任务 内容重复（仅 id 不同），已去除。"
+ },
+ "files": [
+  {
+   "file": "C13_数学换算与比较",
+   "group": "new",
+   "lines": 70576,
+   "chars": 14606759,
+   "raw_bytes": 25853503,
+   "xz_bytes": 2313184,
+   "sample": "NEW__C13_数学换算与比较.jsonl",
+   "skipped": 0,
+   "sec": 10.2
+  },
+  {
+   "file": "SG_故事概括与多维组合写作",
+   "group": "new",
+   "lines": 20579,
+   "chars": 12609632,
+   "raw_bytes": 31275932,
+   "xz_bytes": 6202960,
+   "sample": "NEW__SG_故事概括与多维组合写作.jsonl",
+   "skipped": 0,
+   "sec": 20.8
+  },
+  {
+   "file": "1101__世界历史、中国历史",
+   "group": "train",
+   "lines": 1281,
+   "chars": 467751,
+   "raw_bytes": 1262884,
+   "xz_bytes": 325136,
+   "sample": "1101__世界历史、中国历史.jsonl",
+   "sec": 0.5
+  },
+  {
+   "file": "1101__人物",
+   "group": "train",
+   "lines": 237,
+   "chars": 80723,
+   "raw_bytes": 216176,
+   "xz_bytes": 63460,
+   "sample": "1101__人物.jsonl",
+   "sec": 0.1
+  },
+  {
+   "file": "1101__基础知识型问答",
+   "group": "train",
+   "lines": 917481,
+   "chars": 159145145,
+   "raw_bytes": 298611931,
+   "xz_bytes": 44508164,
+   "sample": "1101__基础知识型问答.jsonl",
+   "sec": 178.0
+  },
+  {
+   "file": "1101__定位训练_提供资料_对资料进行多轮提问",
+   "group": "train",
+   "lines": 192668,
+   "chars": 162570750,
+   "raw_bytes": 314918753,
+   "xz_bytes": 50461028,
+   "sample": "1101__定位训练_提供资料_对资料进行多轮提问.jsonl",
+   "sec": 188.5
+  },
+  {
+   "file": "1101__定位训练_日常对话中的定位训练",
+   "group": "train",
+   "lines": 163967,
+   "chars": 94129206,
+   "raw_bytes": 179385424,
+   "xz_bytes": 28401956,
+   "sample": "1101__定位训练_日常对话中的定位训练.jsonl",
+   "sec": 111.5
+  },
+  {
+   "file": "1101__常识性一问一答",
+   "group": "train",
+   "lines": 195737,
+   "chars": 29630362,
+   "raw_bytes": 50696995,
+   "xz_bytes": 8002080,
+   "sample": "1101__常识性一问一答.jsonl",
+   "sec": 30.3
+  },
+  {
+   "file": "1101__常识问答",
+   "group": "train",
+   "lines": 25457,
+   "chars": 4018973,
+   "raw_bytes": 7101830,
+   "xz_bytes": 1191224,
+   "sample": "1101__常识问答.jsonl",
+   "sec": 4.0
+  },
+  {
+   "file": "1101__总结概括训练_提供资料_对资料做多轮概括",
+   "group": "train",
+   "lines": 40134,
+   "chars": 23633304,
+   "raw_bytes": 51938845,
+   "xz_bytes": 10834916,
+   "sample": "1101__总结概括训练_提供资料_对资料做多轮概括.jsonl",
+   "sec": 37.9
+  },
+  {
+   "file": "1101__新主题长资料_A批",
+   "group": "train",
+   "lines": 11240,
+   "chars": 14422042,
+   "raw_bytes": 36298343,
+   "xz_bytes": 7889608,
+   "sample": "1101__新主题长资料_A批.jsonl",
+   "sec": 26.7
+  },
+  {
+   "file": "1101__日常寒暄与闲聊",
+   "group": "train",
+   "lines": 2835,
+   "chars": 854433,
+   "raw_bytes": 1317268,
+   "xz_bytes": 146620,
+   "sample": "1101__日常寒暄与闲聊.jsonl",
+   "sec": 0.5
+  },
+  {
+   "file": "1101__沅沅对话",
+   "group": "train",
+   "lines": 28050,
+   "chars": 19078030,
+   "raw_bytes": 39293937,
+   "xz_bytes": 7318604,
+   "sample": "1101__沅沅对话.jsonl",
+   "sec": 29.0
+  },
+  {
+   "file": "1101__物理化学",
+   "group": "train",
+   "lines": 447,
+   "chars": 160133,
+   "raw_bytes": 433624,
+   "xz_bytes": 111716,
+   "sample": "1101__物理化学.jsonl",
+   "sec": 0.1
+  },
+  {
+   "file": "1101__现代生活制度",
+   "group": "train",
+   "lines": 111,
+   "chars": 42886,
+   "raw_bytes": 116984,
+   "xz_bytes": 35052,
+   "sample": "1101__现代生活制度.jsonl",
+   "sec": 0.0
+  },
+  {
+   "file": "1101__自我介绍",
+   "group": "train",
+   "lines": 310,
+   "chars": 52009,
+   "raw_bytes": 75087,
+   "xz_bytes": 3840,
+   "sample": "1101__自我介绍.jsonl",
+   "sec": 0.0
+  },
+  {
+   "file": "1123__C01_故事叙事",
+   "group": "train",
+   "lines": 12577,
+   "chars": 12078848,
+   "raw_bytes": 33331180,
+   "xz_bytes": 6808500,
+   "sample": "1123__C01_故事叙事.jsonl",
+   "sec": 24.5
+  },
+  {
+   "file": "1123__C02_形容与颜色性状",
+   "group": "train",
+   "lines": 38498,
+   "chars": 8485302,
+   "raw_bytes": 16982117,
+   "xz_bytes": 2783756,
+   "sample": "1123__C02_形容与颜色性状.jsonl",
+   "sec": 10.4
+  },
+  {
+   "file": "1123__C03_基础世界与动作",
+   "group": "train",
+   "lines": 60994,
+   "chars": 12443588,
+   "raw_bytes": 25941408,
+   "xz_bytes": 4397320,
+   "sample": "1123__C03_基础世界与动作.jsonl",
+   "sec": 16.2
+  },
+  {
+   "file": "1123__C04_实物属性五层",
+   "group": "train",
+   "lines": 275624,
+   "chars": 58105951,
+   "raw_bytes": 116709573,
+   "xz_bytes": 18277716,
+   "sample": "1123__C04_实物属性五层.jsonl",
+   "sec": 71.9
+  },
+  {
+   "file": "1123__C05_生活常识与概念",
+   "group": "train",
+   "lines": 20298,
+   "chars": 5634797,
+   "raw_bytes": 12079138,
+   "xz_bytes": 2461340,
+   "sample": "1123__C05_生活常识与概念.jsonl",
+   "sec": 8.0
+  },
+  {
+   "file": "1123__C06_社会人文与角色",
+   "group": "train",
+   "lines": 11038,
+   "chars": 3739709,
+   "raw_bytes": 9083184,
+   "xz_bytes": 2069480,
+   "sample": "1123__C06_社会人文与角色.jsonl",
+   "sec": 5.9
+  },
+  {
+   "file": "1123__C07_带资料定位与多轮",
+   "group": "train",
+   "lines": 87483,
+   "chars": 65667956,
+   "raw_bytes": 144812322,
+   "xz_bytes": 23220644,
+   "sample": "1123__C07_带资料定位与多轮.jsonl",
+   "sec": 82.3
+  },
+  {
+   "file": "1123__C08_自我认知与边界",
+   "group": "train",
+   "lines": 13883,
+   "chars": 6148863,
+   "raw_bytes": 13100983,
+   "xz_bytes": 2253032,
+   "sample": "1123__C08_自我认知与边界.jsonl",
+   "sec": 7.6
+  },
+  {
+   "file": "1123__C09_日常对话与情绪",
+   "group": "train",
+   "lines": 53838,
+   "chars": 24355903,
+   "raw_bytes": 53805019,
+   "xz_bytes": 9946236,
+   "sample": "1123__C09_日常对话与情绪.jsonl",
+   "sec": 36.5
+  },
+  {
+   "file": "1123__C10_文字改写与语言任务",
+   "group": "train",
+   "lines": 63491,
+   "chars": 14681613,
+   "raw_bytes": 30894551,
+   "xz_bytes": 4197500,
+   "sample": "1123__C10_文字改写与语言任务.jsonl",
+   "sec": 15.4
+  }
+ ]
+}
