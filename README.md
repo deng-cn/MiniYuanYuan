@@ -1,69 +1,157 @@
 # MiniYuanYuan · 迷你沅沅
 
-**在一张 RTX 3070 8GB 上，从零设计架构、自己处理语料、自己训完的中文对话模型。**
-代码、230 万行对话语料、两版权重（FP16）全部在这个仓库里，没有一行是拿现成模型微调的。
+**一套从零自建的 230.9 万行 / 约 2.96 亿字中文小模型对话语料库（含约 33% 拒答/纠偏/澄清负样本），以及在单卡 RTX 3070 8GB 上验证可用的参考基线模型与训练流程。**
 
-| | 第 2 轮主线 | 第 3 轮 MoE |
+> **核心定位说明**：本仓库**最核心的资产是「语料库与语料配方」**，而不是某个非用不可的魔改模型结构。
+> 如果你只是想拿这套语料去训小模型，**直接用传统的标准 Transformer（如经典 Llama / GQA + SwiGLU）也完全可以**。作者本人因为没有多余时间和算力去反复对比各种架构，仓库里放出的 19.71M / 30.34M 模型与训练脚本，主要用于**验证这套语料能训通、能学会中文对话与看资料回答**，给你提供一套开箱可跑的基线参考与完整训练过程记录。
+
+| 仓库核心内容 | 规模 / 说明 | 位置 |
 |---|---|---|
-| 唯一参数 | 19.71M | 30.34M（单 token 激活 23.26M） |
-| 形状 | 12 层 / d384 / 12 Q-2 KV / 每 2 层共享 1 组 FFN | 同上，L6–L9 两组 FFN 升级成 MoE |
-| 留出集 val | 1.8439（ppl 6.32） | **1.7744**（ppl 5.90） |
-| 权重体积 | 45.8 MB（fp16） | 67.1 MB（fp16） |
-| 4bit 估算 | ≈ 9.4 MiB | ≈ 14.5 MiB |
+| **开源中文对话语料（主力）** | **230.9 万行 / ~2.96 亿字**（含 24 个已训分片 + 2 个未训新分片） | `corpus/`、[docs/corpus.md](docs/corpus.md)、[docs/corpus_generation.md](docs/corpus_generation.md) |
+| **参考分词器与打包训练代码** | 8,302 字词混合词表，完整 PyTorch 训练/评测脚本 | `tools/`、`moxing/`、`configs/` |
+| **两版基线权重（FP16）** | 第 2 轮主线 19.71M（val 1.8439） / 第 3 轮 MoE 30.34M（val 1.7744） | `weights/`、[docs/architecture.md](docs/architecture.md) |
 
-它是「沅沅」——湖南怀化沅陵县人设，会闲聊、会看资料答题、会拒绝它做不到的事。
-但它**不是**小号 ChatGPT：30M 参数记不住冷门事实，也背不下课文。真实边界写在[已知局限](#八已知局限别拿它干这些)，建议先看那一节再看效果。
+它是「沅沅」——湖南怀化沅陵县人设，会闲聊、会看资料答题、会拒绝它做不到的事。但 20M～30M 小模型记不住冷门事实，真实边界写在[已知局限](#六已知局限别拿它干这些)。
 
 ---
 
-## 一、目录
+## 一、语料的组成（核心重点）
 
-```
+整套语料共 **2,308,834 行 / 约 2.96 亿字正文**（不含 JSON 结构字符），统一为 `{"id": ..., "turns": [{"role":"user"|"assistant","text":...}]}`（纯文本分片带 `text` 字段），经 `lzma` 压缩后约 244 MB（解压约 1.5 GB）。
+
+语料由两条自建 API 产线组成：
+- **`1101` 产线（占已训语料正文字数 61.1%）**：偏重基础百科问答、常识问答、大批量 RAG 带资料定位与「沅沅」人设对话，负责把小模型的中文基础表达与资料抽取能力铺厚；
+- **`1123` 产线（占已训语料 38.9% + 全部未训新语料）**：基于 **3,196 个核心一级词 × 10 张结构化母表** 正交调度，并用三层确定性脚本门禁清洗（实测通过率 **98.67%**），重点补齐**实物属性、动作逻辑、句式改写、自我边界以及高比例负样本**。
+
+### 1.1 按能力板块划分的语料组成
+
+| 能力板块 | 包含分片 | 行数 | 核心作用与设计特点 |
+|---|---|---:|---|
+| **1. 基础世界与百科常识** | `1101__基础知识型问答`、`1101__常识性一问一答`、`1101__常识问答`、`1123__C03_基础世界与动作`、`1123__C05_生活常识与概念`、`1123__C06_社会人文与角色`、`1101__世界历史/物理化学/人物/制度` | 1,232,913 | 让小模型建立日常世界、物理现象、社会角色与常见概念的中文语义底座 |
+| **2. 实物属性与形容辨析** | `1123__C04_实物属性五层`、`1123__C02_形容与颜色性状` | 314,122 | 按颜色/材质/用途/结构/交互五层拆解常见物品，强化名词—属性—形容词绑定 |
+| **3. 看资料精准定位（RAG）与概括** | `1101__定位训练_提供资料_多轮提问`、`1101__定位训练_日常对话中的定位`、`1123__C07_带资料定位与多轮`、`1101__总结概括训练`、`1101__新主题长资料_A批` | 495,492 | **小模型最稳的核心能力**：把资料放前面、多轮紧扣原文细节提问（含“文中未提就拒答”），训练只据原文回答、不瞎编 |
+| **4. 日常对话、情绪与人设** | `1101__沅沅对话`、`1101__日常寒暄与闲聊`、`1101__自我介绍`、`1123__C09_日常对话与情绪` | 85,033 | 寒暄、道谢道歉、情绪安慰、换题澄清，塑造稳定自然的「沅沅」口语对话感 |
+| **5. 文字改写与语言规则** | `1123__C10_文字改写与语言任务` | 63,491 | 把字句/被字句互换、改病句、排序、归类、格式约束与多步指令 |
+| **6. 能力边界与故事叙事** | `1123__C08_自我认知与边界`、`1123__C01_故事叙事` | 26,460 | 拒答越界请求（联网查实时天气、设闹钟、跨会话记忆）+ 全第三人称日常故事 |
+| **7. 高比例负样本（贯穿 1123 产线，约占 33%）** | 分布于 `C01`～`C10`、`C13`、`SG` 各轨道 | （内嵌于各分片） | 包含三大类：**错答认错纠偏**（首轮错答不计 Loss，仅终轮纠偏计 Loss）、**未提拒编**（文中没写就说不知道）、**缺条件先澄清 / 越界拒答** |
+| **8. 未进过当前权重训练的新语料（`corpus/new/`）** | `C13_数学换算与比较`、`SG_故事概括与多维组合写作` | 91,155 | 训练结束后才产出，**两版公开权重均未见过**：含 7 万条分步数学应用题（含缺条件拒算）与 2 万条 600 字以内多维组合写故事/多轮反问改稿 |
+
+### 1.2 逐分片数量速览与查看方式
+
+- **先看样本再下全量**：`corpus/samples/*.jsonl` 收录了每个分片前 100 条明文；
+- **全量压缩包**：`corpus/raw/*.xz`（24 个已训分片，221.8 万行）与 `corpus/new/*.xz`（2 个未训新分片，9.1 万行）；
+- **详细产出流程、Prompt 长什么样、以及尚缺最后 10 包待补清单**：见 **[docs/corpus_generation.md](docs/corpus_generation.md)**；
+- **逐分片字数与已知瑕疵说明**：见 **[docs/corpus.md](docs/corpus.md)**（注：当前已训版本存在一定模板化与同义重复，适合训练中文对话骨架与 RAG 定位，不建议当百科事实库；如要继续提高能力，建议将 `corpus/new/` 并入重训，并对 `C04` 适当降权或去重）。
+
+<details>
+<summary>展开查看全部 26 个语料分片行数对照表</summary>
+
+| 线 | 行数 | 内容 |
+|---|---:|---|
+| 1101__基础知识型问答 | 917,481 | 百科式问答 |
+| 1123__C04_实物属性五层 | 275,624 | 物品属性分层描述 |
+| 1101__常识性一问一答 | 195,737 | 短问答 |
+| 1101__定位训练_提供资料_多轮提问 | 192,668 | RAG 定位（长资料） |
+| 1101__定位训练_日常对话中的定位 | 163,967 | RAG 定位（对话里夹资料） |
+| 1123__C07_带资料定位与多轮 | 87,483 | RAG 定位 + 未提拒答 |
+| new/C13_数学换算与比较 | 70,576 | **未进训练**（数学 + 缺条件拒算） |
+| 1123__C10_文字改写与语言任务 | 63,491 | 改写 / 病句 / 句式转换 |
+| 1123__C03_基础世界与动作 | 60,994 | 世界常识与动作 |
+| 1123__C09_日常对话与情绪 | 53,838 | 情绪安抚、闲聊 |
+| 1101__总结概括训练_多轮概括 | 40,134 | 摘要 |
+| 1123__C02_形容与颜色性状 | 38,498 | 形容词辨析 |
+| 1101__沅沅对话 | 28,050 | 人设对话 |
+| 1101__常识问答 | 25,457 | 短问答 |
+| new/SG_故事概括与多维组合写作 | 20,579 | **未进训练**（≤600字故事 + 多轮反问改稿） |
+| 1123__C05_生活常识与概念 | 20,298 | 生活常识 |
+| 1123__C08_自我认知与边界 | 13,883 | 拒答、能力边界 |
+| 1123__C01_故事叙事 | 12,577 | 第三人称叙事 |
+| 1101__新主题长资料_A批 | 11,240 | 长资料 |
+| 1123__C06_社会人文与角色 | 11,038 | 社会角色 |
+| 1101__日常寒暄与闲聊 | 2,835 | 寒暄 |
+| 1101__世界历史、中国历史 | 1,281 | 历史 |
+| 1101__物理化学 | 447 | 理化 |
+| 1101__自我介绍 | 310 | 自我介绍 |
+| 1101__人物 | 237 | 人物 |
+| 1101__现代生活制度 | 111 | 制度常识 |
+| **训练用 24 线合计** | **2,217,679** | 约 2.80 亿字 |
+| **新语料 2 线合计** | **91,155** | 约 1,642 万字，未进训练 |
+
+</details>
+
+---
+
+## 二、仓库目录结构
+
+```text
 MiniYuanYuan/
-├── moxing/                 模型定义
-│   ├── model_p4.py         第 1/2 轮：12 层 BiCrossGate（LMP4）
-│   ├── model_moe.py        第 3 轮：FFN 组升级 MoE（LMMoE）
-│   ├── model_arena.py      竞技场 3/5 号（标准 GQA 基线）
-│   ├── model_1126.py       竞技场 1/2 号（4Q-NoKV 变体）
-│   └── quant.py            QAT 伪量化（int4 权重 / int8 激活，STE）
-├── tools/
-│   ├── tokenizer.py        分词器（8302 词，字词混合）
-│   ├── data.py             jsonl → packed bin（编码模板 + 打包）
-│   ├── train_arena.py      统一训练入口（含 MoE 热升级）
-│   ├── dashboard.py        本地训练监控网页（8765 端口）
-│   └── eval_*.py           三套评测脚本（分片 CE / 三层对照 / 终版对比）
-├── configs/                7 份架构配置（含竞技场 5 个对照）
 ├── corpus/
-│   ├── raw/                24 个分片，参与过训练（旧语料）
-│   ├── new/                2 个分片，训练之后才产出，没进过训练（新语料）
-│   ├── samples/            每线前 100 条明文，先看再下
-│   ├── vocab_v2.json       词表
-│   └── MANIFEST.json       逐文件行数/字符数/压缩体积
-├── weights/                两版 fp16 权重（见 weights/README.md）
-├── docs/architecture.md    两代架构逐项对照 + 参数账 + MoE 误判复盘
-├── docs/corpus.md          语料逐分片明细、格式、已知质量问题
-├── docs/corpus_generation.md 1123 线语料产出流程、提示词样例与待补全清单
-├── docs/results.md         22 分片 CE 全表 + 能力实测（含失败的测试）
-├── examples/chat.py        最小可运行对话示例
-└── LICENSE                 CC BY-NC 4.0（仅限非商业使用）
+│   ├── raw/                  24 个分片，参与过当前两版权重训练
+│   ├── new/                  2 个新分片（C13 数学、SG 故事），训练后产出、未进训练
+│   ├── samples/              每线前 100 条明文，先看再下
+│   ├── vocab_v2.json         词表（8,302 字词混合）
+│   └── MANIFEST.json         逐文件行数/字符数/压缩体积
+├── docs/
+│   ├── corpus.md             语料逐分片明细、格式、已知质量问题
+│   ├── corpus_generation.md  1123 线语料产出流程、提示词样例与待补全清单
+│   ├── architecture.md       基线架构参数账与 MoE 复盘（仅供结构参考）
+│   └── results.md            22 分片 CE 全表 + 能力实测（含失败测试）
+├── tools/
+│   ├── tokenizer.py          分词器（8,302 词）
+│   ├── data.py               jsonl → packed bin（编码模板 + 打包）
+│   ├── train_arena.py        统一训练入口（含 MoE 热升级）
+│   ├── dashboard.py          本地训练监控网页（8765 端口）
+│   └── eval_*.py             三套评测脚本
+├── moxing/                   模型定义（BiCrossGate / MoE / 标准 GQA 对照等）
+├── configs/                  架构配置文件
+├── weights/                  两版 fp16 参考权重（见 weights/README.md）
+├── examples/chat.py          最小可运行对话示例
+└── LICENSE                   CC BY-NC 4.0（仅限非商业使用）
 ```
 
-## 二、先分清「旧 / 新」这两个词
+---
 
-仓库里「新」「旧」有两种含义，容易混：
+## 三、我的架构选择与实际训练过程（给复现/自训者的参考）
 
-| 说法 | 指什么 | 在哪 |
-|---|---|---|
-| **旧项目** | `1124` 那条弯路：24.87M，36 个计算层，18 套 Attn 跑两遍，MTP3，val 2.3267 | 代码**不发布**，只在 `docs/architecture.md` 里记录形状与放弃原因 |
-| **新项目** | `1125_jingjichang`：19.71M / MoE 30.34M，12 层每 2 层共享 FFN，val 1.8439 / 1.7744 | **本仓库主体**，代码 + 配置 + 权重全在 |
-| **旧语料** | `corpus/raw/` 24 个分片 | 就是两版权重真正训练过的数据 |
-| **新语料** | `corpus/new/` 2 个分片（C13 数学换算、SG 故事概括） | 训练结束之后才生成，**没进过任何一轮** |
+> **再次说明**：如果你拿这套语料去训自己的模型，**完全没必要照搬这里的 `BiCrossGate` 或 `MoE`**，直接用最省事的**标准传统 Transformer（RoPE + RMSNorm + GQA/MHA + SwiGLU）**就足够了，效果同样稳、还少很多调参包袱。
+> 作者之所以用下面这套结构，只是在 RTX 3070 8GB 有限显存下做的一次快速验证，没有时间再拆开做多轮架构消融实验。
 
-> 所以：**两版权重都没有在新语料上训练过。** 想复现 1.7744 请用 `corpus/raw`；想更强，把 `new` 并进去重训。
+### 3.1 作者实际跑过的架构形状
 
-## 三、快速开始
+| | 第 2 轮主线（基线） | 第 3 轮 MoE（续训） | 如果你用传统 Transformer 怎么选 |
+|---|---|---|---|
+| 唯一参数 | 19.71M | 30.34M（单 token 激活 23.26M） | 直接设 12 层 `d=384` 标准 SwiGLU（约 25M～32M）即可 |
+| 网络形状 | 12 层 / d384 / 12Q-2KV / 每 2 层共享 1 组 BiCrossGate FFN | 同上，L6–L9 两组 FFN 升级为 6 专家 Top-2 MoE | 标准 12 层独立 FFN（不必共享、不必上 MoE） |
+| 留出集 val | 1.8439（ppl 6.32） | **1.7744**（ppl 5.90） | — |
+| 权重体积 | 45.8 MB（fp16） | 67.1 MB（fp16） | — |
 
-只要 PyTorch 2.x，CPU 也能跑（单条回复 1–2 秒），有 CUDA 会自动用。
+```text
+token → Embedding(8302×384)
+      → 12 × [ RMSNorm → GQA(12Q/2KV, hd=32) → 残差 → RMSNorm → 共享 BiCrossGate FFN → 残差 ]
+      → RMSNorm → lm_head（与 Embedding 绑权重）
+```
+
+> 详细的每一层参数账与作者在第三轮 MoE 上的事后复盘（为什么原本只需把 `ffn_share_group` 从 `2` 改成 `1` 即可、没必要引入 MoE），见 **[docs/architecture.md](docs/architecture.md)**。
+
+### 3.2 实际训练过程（单卡 RTX 3070 8GB · bf16 · 无梯度检查点）
+
+作者完整训练一共走了两阶段（总计约 4 小时 07 分）：
+
+1. **阶段 1 — 语料编码打包**：用 `tools/data.py` 把 `corpus/raw/` 的 24 个分片按 `max_len = 1088` 打包成训练用二进制（221.8 万行 → 27.2 万窗口 / **2.96 亿 token**，其中助手回复计入 Loss 约 **1.52 亿 token**）。
+2. **阶段 2 — 第 2 轮主线从零训练（34,000 步 / 2 Epoch）**：
+   - batch `8 × accum 2 × 1088 = 17,408 tok/step`，学习率 `4e-4`（warmup 300 步 + cosine 衰减至 5%），`wd=0.1`、`clip=1.0`。
+   - 吞吐约 `49.7k tok/s`，峰值显存 `3.89 GB`，耗时 **约 2 小时 02 分**，留出集 `val loss` 收敛到 **1.8439**。
+3. **阶段 3 — 第 3 轮 MoE 热升级续训（17,000 步 / 1 Epoch）**：
+   - 直接从第 2 轮 `best.pt` 权重起步，只把中间 L6–L9 两组 FFN 热升级为 MoE 续训 1 个 Epoch（学习率降为 `2e-4`，MoE 参数 ×2）。
+   - 吞吐约 `39.2k tok/s`，峰值显存 `4.98 GB`，耗时 **约 2 小时 05 分**，留出集 `val loss` 进一步压到 **1.7744**。
+
+---
+
+## 四、快速开始（直接跑权重或自己拿语料重训）
+
+### 4.1 体验现成权重
+
+只要 PyTorch 2.x，CPU 也能跑（单条回复 1–2 秒），有 CUDA 会自动用：
 
 ```bash
 pip install torch
@@ -74,182 +162,68 @@ python examples/chat.py --prompt "你好，你是谁？"
 # 带资料提问（模拟 RAG 定位，这是它最稳的能力）
 python examples/chat.py --context "沅陵县位于湖南省怀化市西北部，沅水中游。" --prompt "沅陵县在哪个市？"
 
-# 换 19.71M 那版
+# 换 19.71M 主线版
 python examples/chat.py --model weights/m12l_d384_ep2_fp16.pt --prompt "把这句话改通顺：我家客厅三十平方米。"
-
-# 采样模式（默认 temp=0 贪心解码，确定性输出）
-python examples/chat.py --prompt "讲个短故事" --temp 0.8 --max-new 200
-```
-
-实测输出（`temp=0`，可复现）：
-
-```
-模型：m12l_d384_moe_ep3_fp16.pt（step 17000，best_val 1.7744，dtype float16）
-------------------------------------------------------------
-我是沅沅，来自湘西龙舟之乡沅陵县。
 ```
 
 对话模板（`max_len = 1088`，自己写推理时照这个拼）：
 
-```
+```text
 单轮      <bos><user>{问题}<sep><assistant>
 多轮      <bos><user>{问1}<sep><assistant>{答1}<sep><user>{问2}<sep><assistant>
 带资料    <bos><user>{资料}<sep><user>{问题}<sep><assistant>
 停止符    eos_id 与 <sep>
 ```
 
-## 四、语料
-
-**230.9 万行 / 2.96 亿字正文**，来自两条自建产线：`1101_新主题` 占 61.1%、`1123` 占 38.9%（按正文字数）。
-全部是 API 批量生成 + 规则构造的合成对话，统一成 `{"id": ..., "turns": [{"role","text"}...]}`，lzma 压到 244 MB（解开约 1.5 GB）。
-逐分片行数、正文字数、来源与质量问题见 **[docs/corpus.md](docs/corpus.md)**。
-
-- 先看 `corpus/samples/*.jsonl`（每线 100 条明文）判断要不要下全量；
-- 全量在 `corpus/raw/*.xz` 与 `corpus/new/*.xz`；
-- 行数、字符数、压缩前后体积见 `corpus/MANIFEST.json`。
-
-| 线 | 行数 | 内容 |
-|---|---:|---|
-| 1101__基础知识型问答 | 917,481 | 百科式问答，最大的一坨 |
-| 1123__C04_实物属性五层 | 275,624 | 物品属性分层描述 |
-| 1101__常识性一问一答 | 195,737 | 短问答 |
-| 1101__定位训练_提供资料_多轮提问 | 192,668 | RAG 定位（长资料） |
-| 1101__定位训练_日常对话中的定位 | 163,967 | RAG 定位（对话里夹资料） |
-| 1123__C07_带资料定位与多轮 | 87,483 | RAG 定位 |
-| new/C13_数学换算与比较 | 70,576 | **未进训练** |
-| 1123__C10_文字改写与语言任务 | 63,491 | 改写 / 病句 / 句式转换 |
-| 1123__C03_基础世界与动作 | 60,994 | 世界常识与动作 |
-| 1123__C09_日常对话与情绪 | 53,838 | 情绪安抚、闲聊 |
-| 1101__总结概括训练_多轮概括 | 40,134 | 摘要 |
-| 1123__C02_形容与颜色性状 | 38,498 | 形容词辨析 |
-| 1101__沅沅对话 | 28,050 | 人设对话 |
-| 1101__常识问答 | 25,457 | 短问答 |
-| new/SG_故事概括与多维组合写作 | 20,579 | **未进训练** |
-| 1123__C05_生活常识与概念 | 20,298 | 生活常识 |
-| 1123__C08_自我认知与边界 | 13,883 | 拒答、能力边界 |
-| 1123__C01_故事叙事 | 12,577 | 叙事 |
-| 1101__新主题长资料_A批 | 11,240 | 长资料 |
-| 1123__C06_社会人文与角色 | 11,038 | 社会角色 |
-| 1101__日常寒暄与闲聊 | 2,835 | 寒暄 |
-| 1101__世界历史、中国历史 | 1,281 | 历史 |
-| 1101__物理化学 | 447 | 理化 |
-| 1101__自我介绍 | 310 | 自我介绍 |
-| 1101__人物 | 237 | 人物 |
-| 1101__现代生活制度 | 111 | 制度常识 |
-| **训练用 24 线合计** | **2,217,679** | 2.80 亿字 |
-| **新语料 2 线合计** | **91,155** | 0.16 亿字，未进训练 |
-
-语料的真实水平：模板化明显、同义句重复多、事实密度低。它够让 30M 模型学会「中文对话长什么样」，不够让它变成知识库。别把这批数据当高质量语料库用。
-
-### 语料是怎么产出的 & 还有哪些没产出？
-
-本仓库里的 `1123` 线语料采用**「结构化母表（3,196 核心词）→ 正交多维切片调度（含 ~33% 纠偏/拒答/澄清负样本）→ 小米 `mimo-v2.6-flash` 半价 Batch API 批量生成 → 三层确定性脚本门禁清洗（通过率 98.67%）」**全自动流水线产出：
-
-- **已产出**：33 个半价 Batch 包（12 大类、72.89 万条、真实总字数 **1.35 亿字**，实付 ¥211.88），已全部收录在 `corpus/raw/` 与 `corpus/new/`；
-- **待补全**：因预算先停在了最后 **10 个包**（`C10` 后半 2 包、`C11` 总结概括 3 包、`C12` 生活逻辑推理 3 包、`C01/C07` 补齐精简 2 包，合计约 **3,688 万字**，按半价 Batch 估算还差约 **¥49～¥50**）。
-
-详细的产出流程、典型提示词样例以及逐包已产出/待产出明细，见 **[docs/corpus_generation.md](docs/corpus_generation.md)**（不含任何 API 密钥）。
-
-## 五、架构
-
-完整参数账、每层形状、竞技场 5 个对照模型的成绩、以及第三轮 MoE 的复盘都在 **[docs/architecture.md](docs/architecture.md)**，这里只留结论。
-
-```
-token → Embedding(8302×384)
-      → 12 × [ RMSNorm → GQA(12Q/2KV, hd=32) → 残差 → RMSNorm → 共享 FFN → 残差 ]
-      → RMSNorm → lm_head（与 Embedding 绑权重）
-```
-
-- **每 2 层共享一组 FFN**（`ffn_share_group=2`，共 6 组）：注意力、两个 RMSNorm 各层独立，只有 FFN 共享。这是最狠的一刀，也是后来想拆开的原因。
-- **BiCrossGateFFN**：`gate_proj(cat(act1(q1*x), act2(q2*x))) * up_proj(x)`，`2d²+4di`。竞技场里同参数量下打赢了标准 SwiGLU（val 2.5505 vs 2.5761）。
-- **参数分布**：FFN 12.39M（62.8%）、Attention 4.13M（20.9%）、Embedding 3.19M（16.2%）。所以「共享 FFN」省的正是大头。
-
-### 第三轮 MoE 是一次误判，写在这里当反面教材
-
-当时想解决的问题是「FFN 容量被共享压得太狠」。正确的改法只有一个变量：把 `ffn_share_group` 从 2 改成 1，12 层各给一组独立 FFN（32.10M）。实际做的却是把两组 FFN 升级成 MoE（30.34M，6 专家 Top-2 + 无辅助损失偏置均衡）。
-
-参数量几乎一样（32.10M vs 30.34M），但 MoE 同时动了路由、专家分配、负载均衡、稀疏梯度四套机制，训完**没法回答**「收益到底来自容量还是来自稀疏」。MoE 版确实把 val 从 1.8439 压到 1.7744（22 个留出分片 CE 全降），但它回答不了当初那个问题，还多了一堆调参负担。方法论错误，不是实现错误。
-
-想拆共享，改配置更省事：
-
-```json
-{ "ffn_share_group": 1 }
-```
-
-只动这一个字段，结构、训练目标、优化器全不变，训完可以直接归因「就是容量变大了」。
-
-## 六、训练
-
-单卡 RTX 3070 8GB，bf16，无梯度检查点。
-
-| | 第 2 轮（主线） | 第 3 轮（MoE 热升级） |
-|---|---|---|
-| 步数 | 34,000（2 epoch） | 17,000（1 epoch，从第 2 轮 best 续） |
-| batch | 8 × accum 2 × 1088 = 17,408 tok/step | 同左 |
-| 学习率 | 4e-4，cosine → 5%，warmup 300 | 2e-4，MoE 参数 ×2 |
-| 其他 | wd 0.1 / clip 1.0 / seed 1337 | `moe_down_scale 0.05` / seed 21351 |
-| 训练 token | 2.96 亿（packed，loss 计入 1.52 亿） | 同 |
-| 吞吐 | ≈ 49.7k tok/s | ≈ 39.2k tok/s |
-| 峰值显存 | 3.89 GB | 4.98 GB |
-| 墙钟 | 约 2 小时 02 分 | 约 2 小时 05 分 |
-| val | **1.8439** | **1.7744** |
-
-复现主线（先用 `corpus/samples` 跑通，再换全量）：
+### 4.2 用这套语料从零复现或训练你自己的 Transformer
 
 ```bash
-# 1) 解压 + 打包（仓库不放 packed bin：单文件 565 MB，超 GitHub 100 MiB 限制）
-for f in corpus/raw/*.jsonl.xz; do xz -dk "$f"; done        # 保留 .xz，解出 .jsonl
+# 1) 解压 + 打包（如果想把新语料 corpus/new/ 也一起训进去，先合并到同一个目录再打包）
+for f in corpus/raw/*.jsonl.xz; do xz -dk "$f"; done
 python tools/data.py --src corpus/raw --out dataset/full --max-len 1088
-#    想先小跑一遍：--src corpus/samples （每线 100 条，几十秒打包完）
-#    val 切分：id 以 val- 开头，或按 id 的 md5 取模取 0.5%（--val-ratio 可调）
+#    想先小跑几十秒验流程：--src corpus/samples
 
-# 2) 训练 12 层 19.71M
+# 2) 从零训练 12 层 19.71M 基线（也可以换成 moxing/model_arena.py 里的标准 GQA+SwiGLU）
 python tools/train_arena.py \
   --config configs/m12l_d384_stdgqa_kv2_bicrossgate1152_share2_w1088.json \
   --data dataset/full --run m12l_ep2 --out out \
   --batch 8 --grad-accum 2 --max-len 1088 --lr 4e-4 --epochs 2 --dtype bf16
 
-# 3) MoE 热升级（从第 2 轮 best 续训；也可以直接拿仓库里那版权重当起点）
+# 3) 可选：MoE 热升级续训 1 epoch
 python tools/train_arena.py \
   --config configs/m12l_d384_moe_g34_e6k2_w1088.json \
   --data dataset/full --run m12l_moe --out out \
   --init-upcycle out/m12l_ep2/best.pt --lr 2e-4 --epochs 1 \
   --moe-lr-mult 2.0 --moe-down-scale 0.05
-#    --init-upcycle weights/m12l_d384_ep2_fp16.pt 也行（会从 fp16 权重热升级）
 ```
 
-`tools/data.py` 吃的是 `{"id","turns"}` 的 jsonl；`--src` 给目录会按文件名排序全部读入。
-没有 token 缓存（`dataset/*_cache`）时训练会自动跳过「每轮重新打散」，直接用打包好的 bin —— 想开这个功能先跑 `tools/data.py` 里的 `build_cache` 入口或 `tools/build_full_1125.py`。
-训练曲线用 `python tools/dashboard.py --out out` 起本地网页看（8765 端口）。
+> 本地训练曲线监控：`python tools/dashboard.py --out out`（8765 端口）。
 
-## 七、实测能力（诚实版）
+---
 
-留出集上 22 个分片全部优于上一轮，但 **loss 低 ≠ 会答题**（逐分片全表与测试细节见 **[docs/results.md](docs/results.md)**）：
+## 五、实测能力与边界（诚实版）
 
-| 现象 | 数据 |
-|---|---|
-| 分片 CE（MoE 版） | 最好的 C07 带资料定位 **0.209**；最差的 1101__人物 **3.231** |
-| 45 题人工判分（旧 1124 版） | 全对 3/45，半对 4 题；失败模式几乎都是「主题词 + 模板拼接」 |
-| 开卷 vs 闭卷复现（旧 1124 版） | 开卷逐字命中 36.8% → 闭卷 4.0%（≈ 随机），记的是语言形状不是内容 |
+留出集 22 个分片 CE 全表与测试细节见 **[docs/results.md](docs/results.md)**：
+- **它擅长的**：① **看资料抽取**（C07 留出 CE **0.209**，最稳的一项）；② **拒答与边界**（联网查天气、设闹钟、跨会话记忆会明确拒答并给替代建议）；③ **日常闲聊与情绪安抚**；④ **部分语言规则改写**（把字句/被字句等）。
+- **它不擅长的**：冷门百科数值与日期（会串实体）、三个人物多步动作追踪、没见过的算术（当前权重未训 `corpus/new/C13`）、病句判断、精确背诵课文。
 
-**它擅长的**（不同测试里都稳定）：
+## 六、已知局限（别拿它干这些）
 
-1. **看资料抽取**：给一段没见过的资料提问，能准确抓出答案（C07 留出 CE 0.209，最低的一档）；
-2. **拒答与边界**：联网查天气、设闹钟、发微信、跨会话记忆这类请求，会明确说做不到并给替代方案；
-3. **日常闲聊与情绪安抚**：人设稳定，语气自然；
-4. **部分语言规则改写**：把字句 / 被字句互换能泛化到没见过的句子。
-
-**它不擅长的**：冷门百科数值与日期（会串实体）、三个人物的多步动作追踪、没见过的算术、病句判断（默认倾向「没有语病」）、任何需要精确背诵的内容。
-
-## 八、已知局限（别拿它干这些）
-
-- **不要当知识库**：参数里装不下事实，问细节大概率编。要准就上 RAG，它的定位能力比记忆能力高两个数量级。
+- **不要当知识库**：30M 参数里装不下冷门事实，问细节大概率编；要准请走 RAG（给资料再问）。
 - **不要用于医疗、法律、金融等决策**，也不要用它的输出当事实依据。
-- **不要指望长文**：训练时 `max_len=1088`，超过这个长度质量断崖。
-- **不要用 fp16 权重做逐位复现**：与 fp32 原权重有 0.1%–0.3% 的概率分歧（见 `weights/README.md` 的对照表）。
-- 语料是合成的，含模板与重复，模型会复述这些模板腔。
+- **不要指望长文**：训练时 `max_len=1088`，超过此长度质量明显下降。
+- **不要用 fp16 权重做逐位复现**：与 fp32 原权重存在 `0.1%–0.3%` 概率分歧（见 `weights/README.md`）。
 
-## 九、许可
+## 七、先分清文档里的「旧 / 新」
+
+| 说法 | 指什么 | 在哪 |
+|---|---|---|
+| **旧语料** | `corpus/raw/` 24 个分片（221.8 万行） | 两版权重真正训练过的数据 |
+| **新语料** | `corpus/new/` 2 个分片（`C13` 数学 + `SG` 故事，9.1 万行） | 训练结束后才产出，**两版权重都没训过** |
+| **旧项目（1124）** | 早期 24.87M / 36 层微循环弯路（val 2.3267） | 仅在 `docs/architecture.md` 记录，不发布 |
+| **新项目（1125）** | 当前 19.71M / MoE 30.34M 基线（val 1.8439 / 1.7744） | 本仓库代码与权重 |
+
+## 八、许可
 
 本仓库全部内容（代码、自建合成语料、模型权重）均采用 **CC BY-NC 4.0（署名-非商业性使用 4.0 国际许可协议）** 发布（详见 [LICENSE](LICENSE)）：
 
@@ -262,18 +236,9 @@ python tools/train_arena.py \
 
 ## English
 
-**MiniYuanYuan** is a Chinese chat model trained **from scratch** on a single consumer GPU (RTX 3070, 8 GB) — no pretrained base, no distillation, no borrowed weights.
+**MiniYuanYuan** is an open-source synthetic Chinese dialogue corpus (**2.31M rows / ~296M characters**, including ~33% refusal/correction/clarification negative samples), accompanied by lightweight reference checkpoints (19.71M & 30.34M MoE) trained from scratch on a single RTX 3070 (8 GB) to validate the dataset.
 
-- **Two checkpoints**: 19.71M params (12 layers, d384, GQA 12Q/2KV, one shared BiCrossGate FFN per 2 layers) and a 30.34M-param MoE variant (23.26M active) that upgrades two FFN groups to 6 experts with top-2 routing.
-- **Held-out loss**: 1.8439 (ppl 6.32) and **1.7744** (ppl 5.90). All 22 held-out shards improve in the MoE version.
-- **Corpus**: 2.31M synthetic Chinese dialogue rows (~296M characters), 24 shards used for training plus 2 shards generated *after* training finished (never seen by either checkpoint). Compressed to 244 MB with lzma; 100-line plaintext samples per shard are included so you can inspect before downloading.
-- **Good at**: reading comprehension over a supplied passage (RAG-style grounding), refusing out-of-scope requests, casual chit-chat, and a few syntactic rewriting rules.
-- **Cannot do**: recall obscure facts, multi-step reasoning, or verbatim memorization. At 30M parameters it learns the *shape* of Chinese, not its content. Do not use it as a knowledge base or for medical/legal/financial decisions.
-
-```bash
-pip install torch
-python examples/chat.py --prompt "你好，你是谁？"
-# -> 我是沅沅，来自湘西龙舟之乡沅陵县。
-```
-
-Training recipe, architecture comparison, and a post-mortem of the third-round MoE decision are in [`docs/architecture.md`](docs/architecture.md). Everything here (code, corpus, and weights) is licensed under **CC BY-NC 4.0** (free for personal/non-commercial use with attribution; commercial use is prohibited without separate permission).
+- **Corpus-first repository**: The dataset and data-generation pipeline ([`docs/corpus_generation.md`](docs/corpus_generation.md)) are the core focus. You do **not** have to use the custom `BiCrossGate`/MoE architecture in this repo — a **standard Transformer (e.g., GQA + SwiGLU)** works equally well on this corpus. The included checkpoints simply serve as a reproducible baseline trained under limited time and single-GPU compute.
+- **Corpus composition**: Built from two synthetic lines — `1101` (61.1% of training chars: encyclopedic QA, general chit-chat, persona, and large-scale RAG grounding) and `1123` (38.9% of training chars + all unseen new shards: 3,196 core vocabulary items across object properties, world/action, text rewriting, self-boundaries, plus `~33%` negative samples). Includes 24 trained shards (`corpus/raw/`) and 2 post-training shards (`corpus/new/`: `C13` math & `SG` <=600-char compositional stories).
+- **Training recipe (reference baseline)**: Stage 1 packs `corpus/raw/` at `max_len=1088` (2.96亿 tokens total, 1.52亿 loss tokens); Stage 2 trains the 19.71M base for 2 epochs (34k steps, ~2h 02m, val 1.8439); Stage 3 upcycles two FFN groups to 6-expert top-2 MoE for 1 epoch (17k steps, ~2h 05m, val **1.7744**).
+- **License**: Everything (code, corpus, and weights) is licensed under **CC BY-NC 4.0** (free for personal/educational/non-commercial use with attribution; commercial use prohibited without separate written permission).
