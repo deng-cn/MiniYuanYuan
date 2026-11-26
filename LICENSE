@@ -1,21 +1,31 @@
-MIT License
+Creative Commons Attribution-NonCommercial 4.0 International (CC BY-NC 4.0)
 
-Copyright (c) 2026 Deng
+Copyright (c) 2026 Deng (https://github.com/deng-cn/MiniYuanYuan)
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+本仓库（MiniYuanYuan）中的全部内容——包括源代码、训练与推理脚本、合成语料数据以及模型权重——均采用「知识共享 署名-非商业性使用 4.0 国际许可协议」（CC BY-NC 4.0）授权发布。
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+您可以自由地（非商业前提下）：
+- 个人自用、学习、研究与非商业测试；
+- 复制、修改、二次训练、改编并在非商业场景下分享。
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+前提条件：
+1. 署名（Attribution）：您必须给出适当的署名（标明原作者 Deng 与原仓库地址 https://github.com/deng-cn/MiniYuanYuan），提供指向本许可协议的链接，并说明是否对原内容作了修改。
+2. 非商业性使用（NonCommercial）：您不得将本仓库的代码、语料、模型权重或其直接衍生模型/数据集用于任何商业用途（包括但不限于直接或间接售卖、收费 API 服务、商业产品集成、商业闭源模型训练或其他以商业利益或金钱报酬为主要目的的使用）。
+
+如需商业使用授权，请通过 GitHub（https://github.com/deng-cn/MiniYuanYuan）联系作者另行获取书面许可。
+
+免责声明：
+本软件、语料与模型权重按“现状”提供，不作任何明示或暗示的担保（包括但不限于适销性、特定用途适用性及不侵权的担保）。在任何情况下，作者或版权持有人均不对因使用本仓库内容而产生的任何索赔、损害或其他责任承担责任。
+
+---
+
+English Summary:
+
+All contents of this repository (MiniYuanYuan) — including source code, synthetic corpus data, and model weights — are licensed under the Creative Commons Attribution-NonCommercial 4.0 International License (CC BY-NC 4.0).
+
+You are free to share, use, study, modify, and adapt the material for personal, educational, and non-commercial purposes, under the following terms:
+- Attribution: You must give appropriate credit to Deng (https://github.com/deng-cn/MiniYuanYuan), provide a link to the license, and indicate if changes were made.
+- NonCommercial: You may not use the code, corpus, model weights, or direct derivatives for commercial purposes (including selling, paid APIs, commercial products, or commercial model training) without separate written permission from the author.
+
+Full Legal Code:
+https://creativecommons.org/licenses/by-nc/4.0/legalcode

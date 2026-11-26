@@ -45,7 +45,7 @@ MiniYuanYuan/
 ├── docs/corpus_generation.md 1123 线语料产出流程、提示词样例与待补全清单
 ├── docs/results.md         22 分片 CE 全表 + 能力实测（含失败的测试）
 ├── examples/chat.py        最小可运行对话示例
-└── LICENSE                 MIT
+└── LICENSE                 CC BY-NC 4.0（仅限非商业使用）
 ```
 
 ## 二、先分清「旧 / 新」这两个词
@@ -251,7 +251,11 @@ python tools/train_arena.py \
 
 ## 九、许可
 
-代码 MIT（见 `LICENSE`）。语料为自建合成数据，随仓库以 MIT 发布。权重同 MIT。
+本仓库全部内容（代码、自建合成语料、模型权重）均采用 **CC BY-NC 4.0（署名-非商业性使用 4.0 国际许可协议）** 发布（详见 [LICENSE](LICENSE)）：
+
+- **允许**：个人自用、学习研究、修改、二次训练与非商业署名分享；
+- **禁止**：任何商业用途（不得直接或间接拿去售卖、接入收费服务、用于商业产品或商业闭源训练盈利）；如需商用请联系作者另行授权。
+
 模型输出不保证正确，使用者自担风险。
 
 ---
@@ -272,4 +276,4 @@ python examples/chat.py --prompt "你好，你是谁？"
 # -> 我是沅沅，来自湘西龙舟之乡沅陵县。
 ```
 
-Training recipe, architecture comparison, and a post-mortem of the third-round MoE decision are in [`docs/architecture.md`](docs/architecture.md). Everything here is MIT licensed.
+Training recipe, architecture comparison, and a post-mortem of the third-round MoE decision are in [`docs/architecture.md`](docs/architecture.md). Everything here (code, corpus, and weights) is licensed under **CC BY-NC 4.0** (free for personal/non-commercial use with attribution; commercial use is prohibited without separate permission).
