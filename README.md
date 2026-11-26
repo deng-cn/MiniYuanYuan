@@ -42,6 +42,7 @@ MiniYuanYuan/
 ├── weights/                两版 fp16 权重（见 weights/README.md）
 ├── docs/architecture.md    两代架构逐项对照 + 参数账 + MoE 误判复盘
 ├── docs/corpus.md          语料逐分片明细、格式、已知质量问题
+├── docs/results.md         22 分片 CE 全表 + 能力实测（含失败的测试）
 ├── examples/chat.py        最小可运行对话示例
 └── LICENSE                 MIT
 ```
@@ -213,7 +214,7 @@ python tools/train_arena.py \
 
 ## 七、实测能力（诚实版）
 
-留出集上 22 个分片全部优于上一轮，但 **loss 低 ≠ 会答题**：
+留出集上 22 个分片全部优于上一轮，但 **loss 低 ≠ 会答题**（逐分片全表与测试细节见 **[docs/results.md](docs/results.md)**）：
 
 | 现象 | 数据 |
 |---|---|
