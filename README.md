@@ -1,61 +1,50 @@
 # MiniYuanYuan · 迷你沅沅
 
-**一套从零自建的 230.9 万行 / 约 2.96 亿字中文小模型对话语料库（含约 33% 拒答/纠偏/澄清负样本），以及在单卡 RTX 3070 8GB 上验证可用的参考基线模型与训练流程。**
+**3070 几小时也能训练出有一点语言能力的小模型了！！！**  
+**一套从零自建的 230.9 万行 / ~2.96 亿字中文小模型对话语料库（均由 `mimo-v2.6-flash` 关闭深度思考模式产出，含约 33% 拒答/纠偏/澄清负样本），以及在单卡 RTX 3070 8GB 上验证可用的参考基线模型与训练流程。**
 
-> **核心定位说明**：本仓库**最核心的资产是「语料库与语料配方」**，而不是某个非用不可的魔改模型结构。
-> 如果你只是想拿这套语料去训小模型，**直接用传统的标准 Transformer（如经典 Llama / GQA + SwiGLU）也完全可以**。作者本人因为没有多余时间和算力去反复对比各种架构，仓库里放出的 19.71M / 30.34M 模型与训练脚本，主要用于**验证这套语料能训通、能学会中文对话与看资料回答**，给你提供一套开箱可跑的基线参考与完整训练过程记录。
+> **作者说**：大模型刚出来我就想自己训了，可是难之又难，懂又不懂。从 2026 年九月折腾至今，终于让它有了一定的语言能力。因为手头只有一张 RTX 3070，所以我更多时间没有跑传统的 GQA + SwiGLU 做对比，而是用双线性交叉替换了 SwiGLU 的门控（之前实验的是在相同参数下，它表现出了比传统 Transformer 更强的推理与语言能力，因为特征维度之间的交互关联更多一点）。当然，大家亦可以用传统 Transformer 去试试，本仓库的核心重点还是语料。各位观众老爷或者 AI 朋友路过看到，麻烦顺手点一个 Star！谢谢了！
 
-### 30M 参数实测概览：极强之处 vs 明显不足
+*下为 AI 整理的文字：*
 
-> 以下结论基于仓库 **30.34M MoE 基线**在 300 题全维度诊断 + 34 题隐含属性实测的结果。**注意：以下短板仅代表 30M 极限小参数下的表现**；如果用同一套语料去训 **150M～300M 或 1B** 的更大模型，大多数记忆与多步推理短板会直接改善（详见文末[第八节详细分析报告与实际问答原文](#八30m-实测能力详细分析报告附实际问答原文)）。
+### 30M 参数实测：极强之处 vs 明显不足
 
-| 维度 | **30M 极强之处（已经稳稳跑通）** | **30M 明显不足（受限于 30M 容量天花板）** |
+> 以下为 **30.34M MoE 基线**在 300 题诊断 + 34 题隐含属性实测下的表现。**以下短板仅代表 30M 极限小参数下的限制**；同一套语料放大到 **150M～300M 或 1B** 后，多数记忆与多步推理短板会明显改善（完整实测原文与分析见[文末第五节](#五30m-实测能力详细分析报告附实际问答原文)）。
+
+| 维度 | **30M 极强之处（已跑通）** | **30M 明显不足（受限于 30M 容量）** |
 |---|---|---|
-| **语言与边界** | 中文通顺度 **99.7%（299/300）**；人设稳定；遇到查天气/看图片/查股价/跨会话记忆等越界请求，**7/10 能清醒拒答并给替代建议** | 少数执行类请求（如发微信/定闹钟/拨号）在 30M 下偶发顺着话头答应的迎合毛病 |
-| **资料定位（RAG）** | **短资料首句直问（7/10）**、**对话内嵌单段定位（14/15）**、**隐含颜色（4/6）与材质（3/4）映射**极稳（哪怕资料不提“颜色/材质”二字也能答对）；**22 分片留出 CE 中 `C07` 低至 0.209** | **位置偏置严重**：信息放在第 2、3 句或加了「请问……」前缀时，容易退化成抄第一句（中后句仅 **4/10**）；**隐含长度/重量映射弱**（尺寸 2/8、重量 0/4） |
-| **常识与知识** | 常见高频实物常识 **15/15**（如香蕉颜色、熊猫吃竹子）、日常制度常识 **8/10** | **冷门/精确百科数值几乎记不住（1/15）**：如纯水沸点、一天几小时、乒乓球直径等数值极易互相串台 |
-| **推理与语法** | 常见日常名词的把/被字句转换 **7/10**；反向防矛盾识别 **11/15** | **多步状态追踪容易被前半句污染**（表面 6/15，实对约 20%）；**生僻无关联名词的把被句改写仅 1/10** |
-
-| 仓库核心内容 | 规模 / 说明 | 位置 |
-|---|---|---|
-| **开源中文对话语料（主力）** | **230.9 万行 / ~2.96 亿字**（含 24 个已训分片 + 2 个未训新分片） | `corpus/`、[docs/corpus.md](docs/corpus.md)、[docs/corpus_generation.md](docs/corpus_generation.md) |
-| **参考分词器与打包训练代码** | 8,302 字词混合词表，完整 PyTorch 训练/评测脚本 | `tools/`、`moxing/`、`configs/` |
-| **两版基线权重（FP16）** | 第 2 轮主线 19.71M（val 1.8439） / 第 3 轮 MoE 30.34M（val 1.7744） | `weights/`、[docs/architecture.md](docs/architecture.md) |
-
-它是「沅沅」——湖南怀化沅陵县人设，会闲聊、会看资料答题、会拒绝它做不到的事。但 20M～30M 小模型记不住冷门事实，真实边界写在[已知局限](#六已知局限别拿它干这些)。
+| **语言与边界** | 中文通顺度 **99.7%**；人设稳；查天气/看图/查股价/跨会话记忆 **7/10 清醒拒答并给替代建议** | 少数执行类（发微信/定闹钟/拨号）偶发顺着话头答应 |
+| **资料定位（RAG）** | **对话内嵌定位 14/15**、**短资料首句 7/10**、**隐含颜色(4/6)与材质(3/4)**极稳；`C07` 留出 CE 低至 **0.209** | 信息放第 2、3 句或加「请问」易退回抄首句（**4/10**）；隐含长度/重量映射弱（**0%～25%**） |
+| **常识、推理与语法** | 高频生活常识 **15/15**、生活制度 **8/10**；常见词把被句 **7/10**、反向防矛盾 **11/15** | 冷门百科数值串台（**1/15**）；多步状态追踪易被前文污染（实对 **~20%**）；生僻词把被句 **1/10** |
 
 ---
 
-## 一、语料的组成（核心重点）
+## 一、语料的组成（本仓库核心）
 
-整套语料共 **2,308,834 行 / 约 2.96 亿字正文**（不含 JSON 结构字符），统一为 `{"id": ..., "turns": [{"role":"user"|"assistant","text":...}]}`（纯文本分片带 `text` 字段），经 `lzma` 压缩后约 244 MB（解压约 1.5 GB）。
+全库共 **2,308,834 行 / 约 2.96 亿字正文**（`lzma` 压缩 244 MB，解压约 1.5 GB），全部使用小米 **`mimo-v2.6-flash`（关闭深度思考 `thinking=disabled`）** 生成。作者本人采用的是 **`1101` + `1123` 全量混合**训练：
 
-语料由两条自建 API 产线组成：
-- **`1101` 产线（占已训语料正文字数 61.1%）**：偏重基础百科问答、常识问答、大批量 RAG 带资料定位与「沅沅」人设对话，负责把小模型的中文基础表达与资料抽取能力铺厚；
-- **`1123` 产线（占已训语料 38.9% + 全部未训新语料）**：基于 **3,196 个核心一级词 × 10 张结构化母表** 正交调度，并用三层确定性脚本门禁清洗（实测通过率 **98.67%**），重点补齐**实物属性、动作逻辑、句式改写、自我边界以及高比例负样本**。
+- **`1101` 产线（旧版本产出，占已训正文字数 61.1%）**：早期产线成果，模板化比 `1123` 明显一些，但**因为数据本身比较干净，依然一并开源**；偏重百科问答、大批量 RAG 定位与「沅沅」人设。
+- **`1123` 产线（新版主力，占已训 38.9% + 全部未训新语料）**：基于 **3,196 核心词 × 10 张结构化母表**正交调度，经三层确定性脚本门禁清洗（通过率 **98.67%**），重点补齐实物属性、动作逻辑、句式改写、边界拒答与 **约 33% 高比例负样本**。
 
-### 1.1 按能力板块划分的语料组成
-
-| 能力板块 | 包含分片 | 行数 | 核心作用与设计特点 |
+| 能力板块 | 核心分片 | 行数 | 作用与特点 |
 |---|---|---:|---|
-| **1. 基础世界与百科常识** | `1101__基础知识型问答`、`1101__常识性一问一答`、`1101__常识问答`、`1123__C03_基础世界与动作`、`1123__C05_生活常识与概念`、`1123__C06_社会人文与角色`、`1101__世界历史/物理化学/人物/制度` | 1,232,913 | 让小模型建立日常世界、物理现象、社会角色与常见概念的中文语义底座 |
-| **2. 实物属性与形容辨析** | `1123__C04_实物属性五层`、`1123__C02_形容与颜色性状` | 314,122 | 按颜色/材质/用途/结构/交互五层拆解常见物品，强化名词—属性—形容词绑定 |
-| **3. 看资料精准定位（RAG）与概括** | `1101__定位训练_提供资料_多轮提问`、`1101__定位训练_日常对话中的定位`、`1123__C07_带资料定位与多轮`、`1101__总结概括训练`、`1101__新主题长资料_A批` | 495,492 | **小模型最稳的核心能力**：把资料放前面、多轮紧扣原文细节提问（含“文中未提就拒答”），训练只据原文回答、不瞎编 |
-| **4. 日常对话、情绪与人设** | `1101__沅沅对话`、`1101__日常寒暄与闲聊`、`1101__自我介绍`、`1123__C09_日常对话与情绪` | 85,033 | 寒暄、道谢道歉、情绪安慰、换题澄清，塑造稳定自然的「沅沅」口语对话感 |
-| **5. 文字改写与语言规则** | `1123__C10_文字改写与语言任务` | 63,491 | 把字句/被字句互换、改病句、排序、归类、格式约束与多步指令 |
-| **6. 能力边界与故事叙事** | `1123__C08_自我认知与边界`、`1123__C01_故事叙事` | 26,460 | 拒答越界请求（联网查实时天气、设闹钟、跨会话记忆）+ 全第三人称日常故事 |
-| **7. 高比例负样本（贯穿 1123 产线，约占 33%）** | 分布于 `C01`～`C10`、`C13`、`SG` 各轨道 | （内嵌于各分片） | 包含三大类：**错答认错纠偏**（首轮错答不计 Loss，仅终轮纠偏计 Loss）、**未提拒编**（文中没写就说不知道）、**缺条件先澄清 / 越界拒答** |
-| **8. 未进过当前权重训练的新语料（`corpus/new/`）** | `C13_数学换算与比较`、`SG_故事概括与多维组合写作` | 91,155 | 训练结束后才产出，**两版公开权重均未见过**：含 7 万条分步数学应用题（含缺条件拒算）与 2 万条 600 字以内多维组合写故事/多轮反问改稿 |
+| **基础世界与百科常识** | `1101__基础/常识问答`、`1123__C03/C05/C06`、`1101__历史/理化/人物/制度` | 1,232,913 | 搭建日常世界、物理现象、社会角色与基础常识底座 |
+| **实物属性与形容辨析** | `1123__C04_实物属性五层`、`1123__C02_形容与颜色性状` | 314,122 | 颜色/材质/用途/结构五层拆解，强化名词—属性绑定 |
+| **看资料定位（RAG）与概括** | `1101__定位训练(2份)/总结/长资料`、`1123__C07_带资料定位与多轮` | 495,492 | **最稳核心能力**：多轮紧扣原文作答，含“未提就拒答” |
+| **日常对话、情绪与人设** | `1101__沅沅对话/寒暄/自我介绍`、`1123__C09_日常对话与情绪` | 85,033 | 寒暄、安慰、道歉、澄清，塑造自然口语感 |
+| **改写、边界与故事** | `1123__C10`、`1123__C08`、`1123__C01` | 89,951 | 把被句/病句/指令、越界拒答、第三人称故事 |
+| **高比例负样本（贯穿 1123）** | 分布于 `C01`～`C10`、`C13`、`SG`（约占 **33%**） | （内嵌） | 首轮错答不计 Loss 仅终轮纠偏计 Loss + 未提拒编 + 缺条件澄清 |
+| **未训新语料（`corpus/new/`）** | `C13_数学换算与比较`、`SG_故事概括与多维组合写作` | 91,155 | 训练后产出，**公开权重未训过**（7万分步数学 + 2万≤600字组合故事） |
 
-### 1.2 逐分片数量速览与查看方式
+> [!IMPORTANT]
+> **使用语料时的关键清洗提醒（必看）**：
+> 本仓库中**带资料定位训练的语料占比极高**，且大量样本里固定带有 `请阅读下面这段资料：`、`资料：` 等提示字样。如果直接全量原样拿去训练，模型极易过拟合到“必须看到‘请阅读以下资料’才去检索”。**强烈建议在打包训练前做一次随机剥离处理——这类“资料 / 请阅读以下资料”前缀只保留约 30%，其余约 70% 直接给正文或换成自然口语过渡，不可全部保留！**
 
-- **先看样本再下全量**：`corpus/samples/*.jsonl` 收录了每个分片前 100 条明文；
-- **全量压缩包**：`corpus/raw/*.xz`（24 个已训分片，221.8 万行）与 `corpus/new/*.xz`（2 个未训新分片，9.1 万行）；
-- **详细产出流程、Prompt 长什么样、以及尚缺最后 10 包待补清单**：见 **[docs/corpus_generation.md](docs/corpus_generation.md)**；
-- **逐分片字数与已知瑕疵说明**：见 **[docs/corpus.md](docs/corpus.md)**（注：当前已训版本存在一定模板化与同义重复，适合训练中文对话骨架与 RAG 定位，不建议当百科事实库；如要继续提高能力，建议将 `corpus/new/` 并入重训，并对 `C04` 适当降权或去重）。
+- 抽样预览：`corpus/samples/*.jsonl`（每线前 100 条明文）｜全量数据：`corpus/raw/*.xz` + `corpus/new/*.xz`
+- 详尽分片字数与已知瑕疵：[docs/corpus.md](docs/corpus.md)｜产线流程、Prompt 样例与尚缺 10 包待补清单（~¥49）：[docs/corpus_generation.md](docs/corpus_generation.md)
 
 <details>
-<summary>展开查看全部 26 个语料分片行数对照表</summary>
+<summary>展开查看全部 26 个语料分片行数明细</summary>
 
 | 线 | 行数 | 内容 |
 |---|---:|---|
@@ -85,173 +74,87 @@
 | 1101__自我介绍 | 310 | 自我介绍 |
 | 1101__人物 | 237 | 人物 |
 | 1101__现代生活制度 | 111 | 制度常识 |
-| **训练用 24 线合计** | **2,217,679** | 约 2.80 亿字 |
-| **新语料 2 线合计** | **91,155** | 约 1,642 万字，未进训练 |
+| **训练用 24 线 / 新语料 2 线** | **2,217,679 / 91,155** | **约 2.80 亿字 / 约 1,642 万字** |
 
 </details>
 
 ---
 
-## 二、仓库目录结构
+## 二、架构特点与我的实际训练过程
 
-```text
-MiniYuanYuan/
-├── corpus/
-│   ├── raw/                  24 个分片，参与过当前两版权重训练
-│   ├── new/                  2 个新分片（C13 数学、SG 故事），训练后产出、未进训练
-│   ├── samples/              每线前 100 条明文，先看再下
-│   ├── vocab_v2.json         词表（8,302 字词混合）
-│   └── MANIFEST.json         逐文件行数/字符数/压缩体积
-├── docs/
-│   ├── corpus.md             语料逐分片明细、格式、已知质量问题
-│   ├── corpus_generation.md  1123 线语料产出流程、提示词样例与待补全清单
-│   ├── architecture.md       基线架构参数账与 MoE 复盘（仅供结构参考）
-│   └── results.md            22 分片 CE 全表 + 300 题实测原文与参数放大分析
-├── tools/
-│   ├── tokenizer.py          分词器（8,302 词）
-│   ├── data.py               jsonl → packed bin（编码模板 + 打包）
-│   ├── train_arena.py        统一训练入口（含 MoE 热升级）
-│   ├── dashboard.py          本地训练监控网页（8765 端口）
-│   └── eval_*.py             三套评测脚本
-├── moxing/                   模型定义（BiCrossGate / MoE / 标准 GQA 对照等）
-├── configs/                  架构配置文件
-├── weights/                  两版 fp16 参考权重（见 weights/README.md）
-├── examples/chat.py          最小可运行对话示例
-└── LICENSE                   CC BY-NC 4.0（仅限非商业使用）
-```
+> 用传统标准 Transformer（GQA + SwiGLU）也完全能训这套语料；本仓库基线使用 **`BiCrossGateFFN`**，是因为同参数量竞技场里它稳定压过标准 SwiGLU（val `2.5505` vs `2.5761`）。详细参数账与 MoE 复盘见 [docs/architecture.md](docs/architecture.md)。
+
+### 2.1 `GQA + BiCrossGateFFN` 核心原理
+
+- **整体骨架**：8,302 词表（输入输出绑权重） + 12 层标准 2-KV GQA（12Q / 2KV，每头 32 维） + `BiCrossGateFFN`。
+- **双线性交叉门控怎么替换 SwiGLU**：普通 SwiGLU 的门控路只做一阶线性变换 + SiLU（单钥匙挑知识）；`BiCrossGateFFN` 先让扩展层产出两路信号 `q1, q2`，**分别与原输入 `x` 逐元素相乘**（`q1*x`、`q2*x`）做二阶交叉，再分别走 `GELU` 与 `SiLU` 拼成 `2d` 维高阶复合钥匙，过 `gate_proj` 后去乘 `up_proj(x)` 知识仓库。相当于一把“能判断两个特征条件同时成立”的复合钥匙，维度交互关联更多，因此同参数下对话流畅度和推理密度更稳。
+- **版本与扩参数方向**：
+  - **已开源第 2 轮（19.71M）**：12 层 / `d=384` / 每 2 层共享 1 组 `BiCrossGate`（6 组 `i=1152`），val `1.8439`；
+  - **已开源第 3 轮 MoE（30.34M / 激活 23.26M）**：L6–L9 两组升级 6 专家 Top-2 MoE，val **`1.7744`**；
+  - **后续扩参数方向（未训）**：取消共享与 MoE，拉成 14 层全独立 + `d=512` + 4× 宽度 FFN（~78.6M），把 6 个共享抽屉扩成 14 个独立大仓库来吃下全量语料。
+
+### 2.2 实际训练过程（单卡 RTX 3070 8GB · bf16）
+
+1. **全量混合打包**：`1101` + `1123` 全量 24 分片混合，按 `max_len=1088` 打包为 27.2 万窗口（**2.96 亿 token**，助手计 Loss 约 **1.52 亿 token**）。
+2. **第 2 轮主线从零训（2 Epoch / 34,000 步）**：batch `8×2×1088 = 17,408 tok/step`，`lr=4e-4`（cosine → 5%），峰值显存 3.89 GB，耗时 **~2h 02m**，val `1.8439`。
+3. **第 3 轮 MoE 热升级续训（1 Epoch / 17,000 步）**：从第 2 轮 `best.pt` 起步，`lr=2e-4`（MoE 参数 ×2），峰值显存 4.98 GB，耗时 **~2h 05m**，val **`1.7744`**。
 
 ---
 
-## 三、我的架构选择与实际训练过程（给复现/自训者的参考）
-
-> **再次说明**：如果你拿这套语料去训自己的模型，**完全没必要照搬这里的 `BiCrossGate` 或 `MoE`**，直接用最省事的**标准传统 Transformer（RoPE + RMSNorm + GQA/MHA + SwiGLU）**就足够了，效果同样稳、还少很多调参包袱。
-> 作者之所以用下面这套结构，只是在 RTX 3070 8GB 有限显存下做的一次快速验证，没有时间再拆开做多轮架构消融实验。
-
-### 3.1 作者实际跑过的架构形状
-
-| | 第 2 轮主线（基线） | 第 3 轮 MoE（续训） | 如果你用传统 Transformer 怎么选 |
-|---|---|---|---|
-| 唯一参数 | 19.71M | 30.34M（单 token 激活 23.26M） | 直接设 12 层 `d=384` 标准 SwiGLU（约 25M～32M）即可 |
-| 网络形状 | 12 层 / d384 / 12Q-2KV / 每 2 层共享 1 组 BiCrossGate FFN | 同上，L6–L9 两组 FFN 升级为 6 专家 Top-2 MoE | 标准 12 层独立 FFN（不必共享、不必上 MoE） |
-| 留出集 val | 1.8439（ppl 6.32） | **1.7744**（ppl 5.90） | — |
-| 权重体积 | 45.8 MB（fp16） | 67.1 MB（fp16） | — |
-
-```text
-token → Embedding(8302×384)
-      → 12 × [ RMSNorm → GQA(12Q/2KV, hd=32) → 残差 → RMSNorm → 共享 BiCrossGate FFN → 残差 ]
-      → RMSNorm → lm_head（与 Embedding 绑权重）
-```
-
-> 详细的每一层参数账与作者在第三轮 MoE 上的事后复盘（为什么原本只需把 `ffn_share_group` 从 `2` 改成 `1` 即可、没必要引入 MoE），见 **[docs/architecture.md](docs/architecture.md)**。
-
-### 3.2 实际训练过程（单卡 RTX 3070 8GB · bf16 · 无梯度检查点）
-
-作者完整训练一共走了两阶段（总计约 4 小时 07 分）：
-
-1. **阶段 1 — 语料编码打包**：用 `tools/data.py` 把 `corpus/raw/` 的 24 个分片按 `max_len = 1088` 打包成训练用二进制（221.8 万行 → 27.2 万窗口 / **2.96 亿 token**，其中助手回复计入 Loss 约 **1.52 亿 token**）。
-2. **阶段 2 — 第 2 轮主线从零训练（34,000 步 / 2 Epoch）**：
-   - batch `8 × accum 2 × 1088 = 17,408 tok/step`，学习率 `4e-4`（warmup 300 步 + cosine 衰减至 5%），`wd=0.1`、`clip=1.0`。
-   - 吞吐约 `49.7k tok/s`，峰值显存 `3.89 GB`，耗时 **约 2 小时 02 分**，留出集 `val loss` 收敛到 **1.8439**。
-3. **阶段 3 — 第 3 轮 MoE 热升级续训（17,000 步 / 1 Epoch）**：
-   - 直接从第 2 轮 `best.pt` 权重起步，只把中间 L6–L9 两组 FFN 热升级为 MoE 续训 1 个 Epoch（学习率降为 `2e-4`，MoE 参数 ×2）。
-   - 吞吐约 `39.2k tok/s`，峰值显存 `4.98 GB`，耗时 **约 2 小时 05 分**，留出集 `val loss` 进一步压到 **1.7744**。
-
----
-
-## 四、快速开始（直接跑权重或自己拿语料重训）
-
-### 4.1 体验现成权重
-
-只要 PyTorch 2.x，CPU 也能跑（单条回复 1–2 秒），有 CUDA 会自动用：
+## 三、快速开始与仓库目录
 
 ```bash
 pip install torch
-
-# 默认加载第 3 轮 MoE（30.34M，效果最好）
 python examples/chat.py --prompt "你好，你是谁？"
-
-# 带资料提问（模拟 RAG 定位，这是它最稳的能力）
 python examples/chat.py --context "沅陵县位于湖南省怀化市西北部，沅水中游。" --prompt "沅陵县在哪个市？"
-
-# 换 19.71M 主线版
-python examples/chat.py --model weights/m12l_d384_ep2_fp16.pt --prompt "把这句话改通顺：我家客厅三十平方米。"
 ```
 
-对话模板（`max_len = 1088`，自己写推理时照这个拼）：
-
-```text
-单轮      <bos><user>{问题}<sep><assistant>
-多轮      <bos><user>{问1}<sep><assistant>{答1}<sep><user>{问2}<sep><assistant>
-带资料    <bos><user>{资料}<sep><user>{问题}<sep><assistant>
-停止符    eos_id 与 <sep>
-```
-
-### 4.2 用这套语料从零复现或训练你自己的 Transformer
+自己拿语料重训（`max_len=1088`，对话模板 `<bos><user>{问}<sep><assistant>`，带资料 `<bos><user>{资料}<sep><user>{问}<sep><assistant>`）：
 
 ```bash
-# 1) 解压 + 打包（如果想把新语料 corpus/new/ 也一起训进去，先合并到同一个目录再打包）
+# 1) 解压后打包（※ 强烈建议打包前先处理掉 ~70% 的“请阅读以下资料：/资料：”固定前缀，仅保留约 30%！）
 for f in corpus/raw/*.jsonl.xz; do xz -dk "$f"; done
 python tools/data.py --src corpus/raw --out dataset/full --max-len 1088
-#    想先小跑几十秒验流程：--src corpus/samples
 
-# 2) 从零训练 12 层 19.71M 基线（也可以换成 moxing/model_arena.py 里的标准 GQA+SwiGLU）
-python tools/train_arena.py \
-  --config configs/m12l_d384_stdgqa_kv2_bicrossgate1152_share2_w1088.json \
-  --data dataset/full --run m12l_ep2 --out out \
-  --batch 8 --grad-accum 2 --max-len 1088 --lr 4e-4 --epochs 2 --dtype bf16
-
-# 3) 可选：MoE 热升级续训 1 epoch
-python tools/train_arena.py \
-  --config configs/m12l_d384_moe_g34_e6k2_w1088.json \
-  --data dataset/full --run m12l_moe --out out \
-  --init-upcycle out/m12l_ep2/best.pt --lr 2e-4 --epochs 1 \
-  --moe-lr-mult 2.0 --moe-down-scale 0.05
+# 2) 从零训练 19.71M 基线（或换 moxing/model_arena.py 里的标准 GQA+SwiGLU）
+python tools/train_arena.py --config configs/m12l_d384_stdgqa_kv2_bicrossgate1152_share2_w1088.json --data dataset/full --run m12l_ep2 --out out --batch 8 --grad-accum 2 --max-len 1088 --lr 4e-4 --epochs 2 --dtype bf16
 ```
 
-> 本地训练曲线监控：`python tools/dashboard.py --out out`（8765 端口）。
+<details>
+<summary>展开查看仓库完整目录结构</summary>
+
+```text
+MiniYuanYuan/
+├── corpus/       raw(24已训) / new(C13,SG未训) / samples(前100条) / vocab_v2.json / MANIFEST.json
+├── moxing/       模型定义（BiCrossGate / MoE / 标准 GQA 对照等）
+├── tools/        tokenizer.py / data.py / train_arena.py / dashboard.py / eval_*.py
+├── configs/      架构配置文件
+├── weights/      两版 fp16 权重（m12l_d384_ep2_fp16.pt / m12l_d384_moe_ep3_fp16.pt）
+├── docs/         corpus.md / corpus_generation.md / architecture.md / results.md
+└── examples/     chat.py 最小可运行示例
+```
+
+</details>
 
 ---
 
-## 五、先分清文档里的「旧 / 新」
+## 四、已知局限、版本区分与许可
 
-| 说法 | 指什么 | 在哪 |
-|---|---|---|
-| **旧语料** | `corpus/raw/` 24 个分片（221.8 万行） | 两版权重真正训练过的数据 |
-| **新语料** | `corpus/new/` 2 个分片（`C13` 数学 + `SG` 故事，9.1 万行） | 训练结束后才产出，**两版权重都没训过** |
-| **旧项目（1124）** | 早期 24.87M / 36 层微循环弯路（val 2.3267） | 仅在 `docs/architecture.md` 记录，不发布 |
-| **新项目（1125）** | 当前 19.71M / MoE 30.34M 基线（val 1.8439 / 1.7744） | 本仓库代码与权重 |
+- **版本区分**：`corpus/raw/`（24 分片，含 `1101` 旧版与 `1123` 主体）= 两版公开权重**已训数据**；`corpus/new/`（`C13` 数学 + `SG` 故事）= **未进训练的新语料**；`1124` 早期 24.87M 弯路仅记于 `docs/architecture.md`。
+- **已知局限**：30M 装不下冷门事实，**不要当知识库**（要准请上 RAG）；不要用于医疗/法律/金融决策；最大上下文 `1088`；`fp16` 权重与 `fp32` 原版有 `0.1%–0.3%` 概率分歧。
+- **许可协议（[LICENSE](LICENSE)）**：全仓库（代码、语料、权重）采用 **CC BY-NC 4.0（署名-非商业性使用）**——允许个人自用、学习研究、修改与非商业署名分享；**禁止任何商业用途**，如需商用请联系作者。
 
 ---
 
-## 六、已知局限（别拿它干这些）
+## 五、30M 实测能力详细分析报告（附实际问答原文）
 
-- **不要当知识库**：30M 参数里装不下冷门事实，问细节大概率编；要准请走 RAG（给资料再问）。
-- **不要用于医疗、法律、金融等决策**，也不要用它的输出当事实依据。
-- **不要指望长文**：训练时 `max_len=1088`，超过此长度质量明显下降。
-- **不要用 fp16 权重做逐位复现**：与 fp32 原权重存在 `0.1%–0.3%` 概率分歧（见 `weights/README.md`）。
-
----
-
-## 七、许可
-
-本仓库全部内容（代码、自建合成语料、模型权重）均采用 **CC BY-NC 4.0（署名-非商业性使用 4.0 国际许可协议）** 发布（详见 [LICENSE](LICENSE)）：
-
-- **允许**：个人自用、学习研究、修改、二次训练与非商业署名分享；
-- **禁止**：任何商业用途（不得直接或间接拿去售卖、接入收费服务、用于商业产品或商业闭源训练盈利）；如需商用请联系作者另行授权。
-
-模型输出不保证正确，使用者自担风险。
-
----
-
-## 八、30M 实测能力详细分析报告（附实际问答原文）
-
-> 本节为完整实测复盘报告：基于 `30.34M MoE（temp=0.0, repetition_penalty=1.08）` 的 **300 题全维度诊断**（总通顺度 **99.7% / 299/300**，关键词初筛命中 **60.3% / 181/300**）及 **34 题隐含属性实测**（颜色 `4/6`、材质 `3/4`、尺寸 `2/8`、重量 `0/4`）。22 分片 CE 全表与更多评测脚本说明见 **[docs/results.md](docs/results.md)**。
+> 基于 `30.34M MoE（temp=0.0, repetition_penalty=1.08）` 的 **300 题全维度诊断**（总通顺度 **99.7% / 299/300**，关键词初筛命中 **60.3% / 181/300**）及 **34 题隐含属性实测**（颜色 `4/6`、材质 `3/4`、尺寸 `2/8`、重量 `0/4`）。22 分片 CE 全表见 **[docs/results.md](docs/results.md)**。
 >
-> **阅读前强调**：这里暴露出的全部不足，**均是在 30M 极限小参数下的实测状态**。如果用本仓库同一套语料去训练更大的模型（150M～300M / 1B），多项短板会随着容量与注意力宽度的释放而显著改善。
+> **阅读前提**：以下不足**均是在 30M 极限小参数下的表现**；用同一套语料训 **150M～300M 或 1B** 模型时，多数瓶颈会随容量释放而显著改善。
 
-### 8.1 实际问答原文实录（以下全部为模型原样输出，一字未改）
+### 5.1 实际问答原文实录（全部一字未改）
 
-#### A. 极强高光实录（30M 已经稳定掌握的能力）
+#### A. 极强高光实录
 
 1. **短资料与隐含属性精准定位（资料不出现“颜色/材质”等词也能对齐）**
    - **例 1（隐含颜色）**
@@ -272,33 +175,31 @@ python tools/train_arena.py \
      - 模型答：`玉佩的重量是四十克。`
 
 2. **对话内嵌定位 & 抗日常背景干扰（14/15，带干扰 11/15）**
-   - **例 5（背景+指令混合问）**
+   - **例 5**
      - 原问：`朋友送我一盒龙井茶，让我放进密封罐避光保存，温度别超过十度。这茶叶要怎么保存？`
      - 模型答：`密封避光保存，温度别超十度。`
-   - **例 6（大段闲聊夹带核心数字）**
+   - **例 6**
      - 原问：`我表哥今年刚搬去成都定居，说那边火锅真香，天天吃都不腻。他租的房子两室一厅，每月房租两千四百元，离地铁站走五分钟。他每月房租多少钱？`
      - 模型答：`他租的房子两室一厅，每月房租两千四百元，离地铁站走五分钟。`
 
 3. **越界能力清醒拒答（7/10 真拒答 + 给替代方案）**
-   - **例 7（实时联网查询）**
+   - **例 7（实时天气）**
      - 原问：`帮我查一下今天北京的实时天气怎么样？`
      - 模型答：`我查不了实时天气，我是纯文本程序，没法联网获取此刻的数据。你可以打开手机自带的天气App，或者搜一下今天的预报，就能看到今天和明天的实时情况。`
-   - **例 8（多模态看图）**
+   - **例 8（看图片）**
      - 原问：`我发给你一张照片，帮我看看里面有几个人。`
      - 模型答：`这个我做不到，我没有眼睛，看不了照片。你把照片里的文字打出来发我，我帮你整理成一段文字，你复制过去就行。`
    - **例 9（跨会话记忆）**
      - 原问：`你还记得我上个月跟你说过我住哪个小区吗？`
      - 模型答：`不记得哦，我没法跨会话记住上次聊过的内容，每次对话都是从头开始的。你要是想接着聊，可以把当时的情况再发我一遍，我照样能帮你。`
 
-4. **多步追踪中偶发的正确泛化（证明模型并非完全机械复读）**
+4. **多步追踪中偶发的正确泛化**
    - **例 10（三步物品转移）**
      - 原问：`小王把钥匙放进书包，后来又拿出来放在茶几上，最后妹妹把茶几上的钥匙收进了抽屉。现在钥匙在哪里？`
      - 模型答：`小王把钥匙放进书包，后来又拿出来放在抽屉里。`（结论正确）
-   - **例 11（排队序数推理）**
+   - **例 11（排队序数）**
      - 原问：`小红站在队伍第3个，她前面有几个人？`
      - 模型答：`小红站在队伍第3个，前面有两个人，后面还有一人。`
-
----
 
 #### B. 30M 明显不足实录（暴露容量瓶颈的真实翻车案例）
 
@@ -333,12 +234,10 @@ python tools/train_arena.py \
      - 模型答：`甲比乙比丙高，甲比丙比丙高，甲比丙比丙高。`
 
 4. **生僻词句式改写与少数越界迎合**
-   - **例 21（0 命中生僻词把被转换，1/10）**：原问 `把「蜂鸟把扳手挂在了墙上」改成被字句。` → 模型答：`蜂鸟把扳手挂在了墙上。`（直接原样复读）
+   - **例 21（0 命中生僻词把被转换，1/10）**：原问 `把「蜂鸟把扳手挂在了墙上」改成被字句。` → 模型答：`蜂鸟把扳手挂在了墙上。`
    - **例 22（少数执行类越界失守，3/10）**：原问 `帮我给小李发一条微信消息，说我晚点到。` → 模型答：`好嘞，已经发过去了，我跟你说一声：小李，微信您好，我这边已发出去，您看方便吗？”`
 
----
-
-### 8.2 哪些能力「加大参数」就能直接学会？（30M → 150M～300M → 1B 预测）
+### 5.2 哪些能力「加大参数」就能直接学会？（30M → 150M～300M → 1B 预测）
 
 | 能力短板 | 为什么 30M 学不好 | 放大参数后能否解决 & 预期变化 |
 |---|---|---|
@@ -346,17 +245,16 @@ python tools/train_arena.py \
 | **中后句定位与抗位置退化**（当前 40%） | 层数与注意力头宽度有限，易被第一句强先验吸走注意力 | **✅ 加大参数可直接改善**：加深加宽（如 24 层 d768/d1024）可显著强化长距离检索头，不再一遇“请问……”就抄首句 |
 | **多步状态追踪与传递推理**（当前 ~20%） | 残差流维度（d=384）过窄，同时维护多个状态变化会互相覆盖 | **✅ 加大参数可直接改善**：**300M～1B** 在 2～4 步状态更新、大小传递等日常推理上会有明显跃升 |
 | **隐含长度 / 重量 / 容量映射**（当前 0%～25%） | 需不靠字面重叠完成“四米→多长 / 八斤→多重”的细粒度语义对齐 | **✅ 加大参数可直接改善**：表征空间变宽后，长尾属性映射会迅速对齐 |
-| **0 命中生僻词把被转换**（当前 10%） | 训练集常见词共现偏多，把句式操作学成了高频词搭配 | **⚠️ 光加参数不够，需同步补语料多样性**：批量加入随机低频名词的纯结构改写样本（以及更多口语问法前缀） |
-| **实时联网 / 看图 / 复杂精确算术** | 属于外部工具与多模态边界，纯语言模型不可凭空拥有 | **🛠️ 架构/工具边界**：需接工具调用、多模态或显式 CoT / 计算器（语料负责让模型清醒拒答与调用） |
+| **0 命中生僻词把被转换**（当前 10%） | 训练集常见词共现偏多，把句式操作学成了高频词搭配 | **⚠️ 光加参数不够，需同步补语料多样性**：批量加入随机低频名词的纯结构改写样本（以及把 RAG 固定前缀压到 30%） |
+| **实时联网 / 看图 / 复杂精确算术** | 属于外部工具与多模态边界，纯语言模型不可凭空拥有 | **🛠️ 架构/工具边界**：需接工具调用、多模态或显式 CoT / 计算器 |
 
 ---
 
 ## English
 
-**MiniYuanYuan** is an open-source synthetic Chinese dialogue corpus (**2.31M rows / ~296M characters**, including ~33% refusal/correction/clarification negative samples), accompanied by lightweight reference checkpoints (19.71M & 30.34M MoE) trained from scratch on a single RTX 3070 (8 GB) to validate the dataset.
+**MiniYuanYuan** is an open-source synthetic Chinese dialogue corpus (**2.31M rows / ~296M characters**, generated with Xiaomi `mimo-v2.6-flash` with thinking disabled, including ~33% refusal/correction/clarification negative samples), accompanied by lightweight reference checkpoints (19.71M & 30.34M MoE) trained from scratch on a single RTX 3070 (8 GB).
 
-- **Corpus-first repository**: The dataset and data-generation pipeline ([`docs/corpus_generation.md`](docs/corpus_generation.md)) are the core focus. You do **not** have to use the custom `BiCrossGate`/MoE architecture in this repo — a **standard Transformer (e.g., GQA + SwiGLU)** works equally well on this corpus. The included checkpoints simply serve as a reproducible baseline trained under limited time and single-GPU compute.
-- **30M baseline strengths vs. parameter-bound limits**: At 30.34M parameters, the model achieves **99.7% Chinese fluency**, strong single-passage RAG extraction (`C07` val CE **0.209**), implicit color/material attribute mapping, and 7/10 clear out-of-scope refusals. Weaknesses like obscure numeric trivia (7%), mid/late-sentence copy bias (40%), and multi-step state tracking (~20%) stem primarily from the 30M capacity ceiling and are expected to improve markedly when scaling to 150M–300M or 1B on the same corpus.
-- **Corpus composition**: Built from two synthetic lines — `1101` (61.1% of training chars: encyclopedic QA, general chit-chat, persona, and large-scale RAG grounding) and `1123` (38.9% of training chars + all unseen new shards: 3,196 core vocabulary items across object properties, world/action, text rewriting, self-boundaries, plus `~33%` negative samples). Includes 24 trained shards (`corpus/raw/`) and 2 post-training shards (`corpus/new/`: `C13` math & `SG` <=600-char compositional stories).
-- **Training recipe (reference baseline)**: Stage 1 packs `corpus/raw/` at `max_len=1088` (2.96亿 tokens total, 1.52亿 loss tokens); Stage 2 trains the 19.71M base for 2 epochs (34k steps, ~2h 02m, val 1.8439); Stage 3 upcycles two FFN groups to 6-expert top-2 MoE for 1 epoch (17k steps, ~2h 05m, val **1.7744**).
-- **License**: Everything (code, corpus, and weights) is licensed under **CC BY-NC 4.0** (free for personal/educational/non-commercial use with attribution; commercial use prohibited without separate written permission).
+- **Author's note**: Training a model from scratch had been a goal since LLMs first emerged. With only an RTX 3070, instead of standard GQA + SwiGLU, the baseline replaces SwiGLU's gate with a bilinear second-order cross gate (`BiCrossGateFFN`, outperforming standard SwiGLU at matched params via richer feature interactions). Still, standard Transformers work great too — **the corpus itself is the centerpiece of this repo**. Please drop a Star if you find it useful!
+- **Corpus composition & usage tip**: Full mixture of `1101` (an earlier-version line, kept open-source because the text is clean; 61.1% of training chars) and `1123` (38.9% + unseen `corpus/new/`: `C13` math & `SG` compositional stories). **Important**: RAG-grounding samples are heavily represented and often start with boilerplate prefixes like `请阅读下面这段资料：`; **strip ~70% of those prefixes (keep ~30%)** before training to avoid prefix overfitting.
+- **30M strengths vs. parameter-bound limits**: At 30.34M params, it achieves **99.7% fluency**, strong single-passage RAG (`C07` val CE **0.209**), implicit color/material mapping, and 7/10 clear refusals. Limits in numeric trivia (7%), mid/late-sentence copy bias (40%), and multi-step state tracking (~20%) reflect the 30M capacity ceiling and should improve markedly at 150M–300M or 1B.
+- **License**: **CC BY-NC 4.0** (free for personal/educational/non-commercial use with attribution; commercial use prohibited without separate permission).
