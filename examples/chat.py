@@ -3,13 +3,16 @@
 
 用法：
     python examples/chat.py --prompt "你好，你是谁？"
+    python examples/chat.py --model weights/m14l_d512_78m_ep2_fp16 --prompt "你好，你是谁？"
     python examples/chat.py --model weights/m12l_d384_ep2_fp16.pt --prompt "帮我改一下病句：我家客厅三十平方米。"
 
 模型选择：
-    weights/m12l_d384_moe_ep3_fp16.pt   第 3 轮 MoE，30.34M（推荐）
+    weights/m14l_d512_78m_ep2_fp16      全量 14 层独立 BiCrossGate，78.58M（4 片 FP16，含 C13/SG）
+    weights/m12l_d384_moe_ep3_fp16.pt   第 3 轮 MoE，30.34M
     weights/m12l_d384_ep2_fp16.pt       第 2 轮 12 层共享，19.71M
 """
 import argparse
+import json
 import os
 import sys
 
@@ -22,8 +25,23 @@ sys.path.insert(0, os.path.join(ROOT, "moxing"))
 from tokenizer import Tokenizer  # noqa: E402
 
 
+def load_checkpoint(model_path):
+    """兼容单文件 .pt 与分片目录（含 meta.json + shard_*.pt）。"""
+    if os.path.isdir(model_path) or model_path.endswith(".json"):
+        meta_path = os.path.join(model_path, "meta.json") if os.path.isdir(model_path) else model_path
+        base_dir = os.path.dirname(meta_path)
+        with open(meta_path, "r", encoding="utf-8") as f:
+            ck = json.load(f)
+        sd = {}
+        for sh in ck["shards"]:
+            sd.update(torch.load(os.path.join(base_dir, sh), map_location="cpu", weights_only=True))
+        ck["model"] = sd
+        return ck
+    return torch.load(model_path, map_location="cpu", weights_only=False)
+
+
 def build(model_path):
-    ck = torch.load(model_path, map_location="cpu", weights_only=False)
+    ck = load_checkpoint(model_path)
     cfg = ck["cfg"]
     if cfg.get("arch_type") == "std_gqa_bicross_moe":
         from model_moe import LMMoE, cfg_moe

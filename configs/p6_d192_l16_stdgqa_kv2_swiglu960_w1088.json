@@ -1,0 +1,23 @@
+{
+  "_说明": "1127 竞技场 6 号选手（传统 SwiGLU 减维增深对照组，与 5 号严格同维同深同参）：d=192, 16层 (6Q/2KV, hd=32), 纯 SwiGLU(i=960, 5.00x), 总参 12.02M, 关闭 MTP, max_len=1088。",
+  "arch_type": "std_gqa",
+  "vocab_size": 8302,
+  "hidden_size": 192,
+  "num_hidden_layers": 16,
+  "num_attention_heads": 6,
+  "num_key_value_heads": 2,
+  "head_dim": 32,
+  "intermediate_size": 960,
+  "use_native_gqa": true,
+  "resid_init_scale": true,
+  "mtp": 0,
+  "mtp_weights": [0.2, 0.1],
+  "max_position_embeddings": 1088,
+  "rope_theta": 1000000.0,
+  "rms_norm_eps": 0.000001,
+  "tie_word_embeddings": true,
+  "dropout": 0.0,
+  "eos_token_id": 3,
+  "attn_backend": "cudnn",
+  "grad_checkpoint": false
+}

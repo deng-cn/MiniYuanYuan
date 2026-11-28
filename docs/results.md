@@ -72,3 +72,9 @@ python tools/eval_ep2_rigorous.py --model weights/m12l_d384_ep2_fp16.pt --data d
 ## 300 题实测原文与参数放大预期
 
 最新针对第 3 轮 30.34M MoE 权重做的 **300 题全维度诊断 + 34 题隐含属性实测**（含 22 条一字未改的强项高光与 30M 容量瓶颈问答原文，以及放大至 150M～300M / 1B 后可学会的能力分析），已完整收录在 **[README.md 第五节](../README.md#五30m-实测能力详细分析报告附实际问答原文)**。
+
+---
+
+## 12M 架构公平擂台（`BiCrossGateFFN` vs `SwiGLU` · 372 题盲测）
+
+针对自研 **`BiCrossGateFFN`** 与传统 **`SwiGLU`** 在 12M 参数量级、同语料（108.4M tokens）、同算力（`19.876 PFLOPs`）下的 7 选手 2×2 系统对照实验（含全量 3,458 条 `val-` CE、3 号负消融、372 题盲测五强榜单与问答原文），请查阅独立详细报告：**[docs/arena_1127_report.md](arena_1127_report.md)**。

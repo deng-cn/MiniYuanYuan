@@ -1,7 +1,7 @@
 # MiniYuanYuan · 迷你沅沅
 
 **3070 几小时也能训练出有一点语言能力的小模型了！！！**  
-**一套从零自建的 230.9 万行 / ~2.96 亿字中文小模型对话语料库（均由 `mimo-v2.6-flash` 关闭深度思考模式产出，含约 33% 拒答/纠偏/澄清负样本），以及在单卡 RTX 3070 8GB 上验证可用的参考基线模型与训练流程。**
+**一套从零自建的 230.9 万行 / ~2.96 亿字中文小模型对话语料库（均由 `mimo-v2.6-flash` 关闭深度思考模式产出，含约 33% 拒答/纠偏/澄清负样本），并配套自研二阶双极性交叉门控架构 `BiCrossGateFFN`（已完成单卡 RTX 3070 8GB 12M 同参数、等算力 2×2 公平验证，[查看 372 题详细测试报告](docs/arena_1127_report.md)）及开源参考基线权重。**
 
 > **作者说**：大模型刚出来我就想自己训了，可是难之又难，懂又不懂。从 2026 年九月折腾至今，终于让它有了一定的语言能力。因为手头只有一张 RTX 3070，所以我更多时间没有跑传统的 GQA + SwiGLU 做对比，而是用双线性交叉替换了 SwiGLU 的门控（之前实验的是在相同参数下，它表现出了比传统 Transformer 更强的推理与语言能力，因为特征维度之间的交互关联更多一点）。当然，大家亦可以用传统 Transformer 去试试，本仓库的核心重点还是语料。各位观众老爷或者 AI 朋友路过看到，麻烦顺手点一个 Star！谢谢了！
 
@@ -80,24 +80,54 @@
 
 ---
 
-## 二、架构特点与我的实际训练过程
+## 二、自研架构 `BiCrossGateFFN` 与公平实验流程
 
-> 用传统标准 Transformer（GQA + SwiGLU）也完全能训这套语料；本仓库基线使用 **`BiCrossGateFFN`**，是因为同参数量竞技场里它稳定压过标准 SwiGLU（val `2.5505` vs `2.5761`）。详细参数账与 MoE 复盘见 [docs/architecture.md](docs/architecture.md)。
+> 本仓库的**核心重点依然是上面的 2.96 亿字纯净语料**（直接用标准 `GQA + SwiGLU` 也能很好地训练这套语料）。在此基础上，我们也重点开源并系统验证了自研前馈结构 **`BiCrossGateFFN`（接法 B）**——在严格控制同参数量、同语料、**完全等算力（`19.876 PFLOPs`）且全量留出 CE 完全相等（`2.2407`）**的 12M 公平擂台下，372 题盲测实战持续优于传统 `SwiGLU`。
+>
+> 👉 **完整数学分析、7 选手全表、3 号负消融、算力账本、24 大类明细与真实问答原文对照，请看独立详测文档：[docs/arena_1127_report.md](docs/arena_1127_report.md)**（历代演进与 MoE 复盘见 [docs/architecture.md](docs/architecture.md)）。
 
-### 2.1 `GQA + BiCrossGateFFN` 核心原理
+### 2.1 `BiCrossGateFFN` 核心原理（替换传统 `SwiGLU`）
 
-- **整体骨架**：8,302 词表（输入输出绑权重） + 12 层标准 2-KV GQA（12Q / 2KV，每头 32 维） + `BiCrossGateFFN`。
-- **双线性交叉门控怎么替换 SwiGLU**：普通 SwiGLU 的门控路只做一阶线性变换 + SiLU（单钥匙挑知识）；`BiCrossGateFFN` 先让扩展层产出两路信号 `q1, q2`，**分别与原输入 `x` 逐元素相乘**（`q1*x`、`q2*x`）做二阶交叉，再分别走 `GELU` 与 `SiLU` 拼成 `2d` 维高阶复合钥匙，过 `gate_proj` 后去乘 `up_proj(x)` 知识仓库。相当于一把“能判断两个特征条件同时成立”的复合钥匙，维度交互关联更多，因此同参数下对话流畅度和推理密度更稳。
-- **版本与扩参数方向**：
-  - **已开源第 2 轮（19.71M）**：12 层 / `d=384` / 每 2 层共享 1 组 `BiCrossGate`（6 组 `i=1152`），val `1.8439`；
-  - **已开源第 3 轮 MoE（30.34M / 激活 23.26M）**：L6–L9 两组升级 6 专家 Top-2 MoE，val **`1.7744`**；
-  - **后续扩参数方向（未训）**：取消共享与 MoE，拉成 14 层全独立 + `d=512` + 4× 宽度 FFN（~78.6M），把 6 个共享抽屉扩成 14 个独立大仓库来吃下全量语料。
+普通 `SwiGLU` 的门控路只做一阶线性投影 + `SiLU`（非负偏向，单钥匙挑知识）；`BiCrossGateFFN`（`moxing/model_p4.py`）先构造**双分支二阶逐元素交叉特征**，再直接投影为**不加外部 `SiLU` 压制的双极性（正负双向）宽维门控**：
 
-### 2.2 实际训练过程（单卡 RTX 3070 8GB · bf16）
+```python
+# 1) 双分支二阶交叉特征（2d 维）
+q1, q2 = self.q(x).chunk(2, dim=-1)                  # W_q: d -> 2d (无 bias)
+b_feat = torch.cat((F.gelu(q1 * x), F.silu(q2 * x)), dim=-1)
+
+# 2) 双极性交叉门控 × 升维仓库 -> 降维输出（不加外部 SiLU）
+gate = self.gate_proj(b_feat)                        # W_gate: 2d -> i
+y = self.down_proj(gate * self.up_proj(x))           # W_up: d -> i, W_down: i -> d
+```
+
+- **核心差异**：单层参数量为 $2d^2 + 4di$（`SwiGLU` 为 $3di$），前向算力 $4d^2 + 8di$（同参数下与 `SwiGLU` 理论 FLOPs 几乎一致）；通过二阶交叉实现更强的特征维度交互，并保留正负双向调节能力。
+- **机制消融实证**：3 号对照（`moxing/model_bicross_v2.py`）尝试给 `gate` 外加 `SiLU` 并加入残差旁路“温和化”门控，结果增益消失并退化回接近普通 `SwiGLU`，反证了**无外部激活的双极性交叉门控**才是关键。
+- **统一注意力底座**：现代 2-KV GQA（`hd=32`，`q_norm`/`k_norm` RMSNorm，RoPE `theta=1e6`，原生 `cuDNN SDPA`）+ `8,302` 共享词表。
+
+### 2.2 12M 公平对比实验流程与核心结论（`arena_1127`）
+
+为公平检验 `BiCrossGateFFN` 与传统 `SwiGLU` 的真实差距，我们在单卡 **RTX 3070 8GB（`bf16`）** 上搭建了统一赛场：
+
+1. **严格同口径底座**：统一使用 `685,931` 条（`108.40M tokens`，含 `3,458` 条留出 `val-` 验证集）混合语料，统一 `max_len=1088`、`batch=8×2`、`lr=4e-4` Cosine、训满 `2 Epoch`（`12,392 steps ≈ 2.157 亿 tokens`，`seed=2027`）。
+2. **第一阶段（宽浅 `d256 L10` · 1～4 号）**：同为 `~12.0M` 参数，让纯 `BiCrossGate`（4 号，`i=680, 2.66×`）正面对比纯 `SwiGLU`（1 号，`i=1080, 4.22×`），并以 2 号（`DiffQ`，慢 55% 淘汰）与 3 号（`BiCrossV2`，负消融）排除干扰。发现 4 号虽总 CE 略高 `+0.0087`，但在非知识型任务（定位/概括/边界/对话）上直接打出 **`72.2% vs 54.2%`** 断层领先，但受 $2d^2$ 项挤占宽度导致常识偏薄。
+3. **第二阶段（深瘦 `d192 L16` · 5～7 号 2×2 扩容验证）**：基于 $2d^2 + 4di$ 公式主动降维（`256 → 192`）以释放 `BiCrossGate` 扩展倍率（`2.66× → 3.25×`，7 号），与精确同参（`12,021,568`）的交替混合（5 号）和纯 `SwiGLU`（6 号，`5.00×`）正面交锋。
+4. **双轨评测**：核对单 token FLOPs / 2 Epoch 总算力与全量 `3,458` 条留出集 CE，并对全部主力选手做 **372 道未见题盲测逐题打分**（`0/1/2` 分，满分 `744`，`greedy` 解码）。
+
+| 选手 | 构型与 FFN | 参数量 / 2ep 总算力 | 全量 `val-` CE | 全量 372 题<br>（满分 744） | 非知识型 36 题<br>（满分 72） | 已学知识 36 题<br>（满分 72） |
+|---|---|---:|---:|---:|---:|---:|
+| **1 号** | `d256 L10` 纯 `SwiGLU` (`4.22×`) | `12.06M` / `19.212 PFLOPs` | **`2.2061`** | `398` (`53.5%`) | `39` (`54.2%`) | `31` (`43.1%`) |
+| **4 号** | `d256 L10` 纯 **`BiCrossGate`** (`2.66×`) | `12.04M` / `19.186 PFLOPs` | `2.2148` | `399` (`53.6%`) | **`52` (`72.2%`)** | `30` (`41.7%`) |
+| **6 号** | `d192 L16` 纯 `SwiGLU` (`5.00×`) | `12.02M` / `19.876 PFLOPs` | `2.2407` | `400` (`53.8%`) | `46` (`63.9%`) | `32` (`44.4%`) |
+| **7 号** | `d192 L16` 纯 **`BiCrossGate`** (`3.25×`) | `12.02M` / `19.876 PFLOPs` | `2.2407` | **`407` (`54.7%`)** | `43` (`59.7%`) | **`40` (`55.6%`)** |
+
+- **选型建议**：偏重 **RAG 定位 / 概括 / 边界 / 对话** 选 **4 号（宽浅 `BiCrossGate`）**；偏重 **综合最高分 / 压低 0 分翻车 / 均衡记忆** 选 **7 号（深瘦 `BiCrossGate`，与 6 号算力差 `0.00%`、CE 差 `0.0000`，盲测 `64 胜 / 254 平 / 54 负`，知识类 0 分仅 1 题）**。详情见 **[docs/arena_1127_report.md](docs/arena_1127_report.md)**。
+
+### 2.3 已开源基线权重训练过程（19.71M → 30.34M MoE · 单卡 RTX 3070 8GB）
 
 1. **全量混合打包**：`1101` + `1123` 全量 24 分片混合，按 `max_len=1088` 打包为 27.2 万窗口（**2.96 亿 token**，助手计 Loss 约 **1.52 亿 token**）。
-2. **第 2 轮主线从零训（2 Epoch / 34,000 步）**：batch `8×2×1088 = 17,408 tok/step`，`lr=4e-4`（cosine → 5%），峰值显存 3.89 GB，耗时 **~2h 02m**，val `1.8439`。
-3. **第 3 轮 MoE 热升级续训（1 Epoch / 17,000 步）**：从第 2 轮 `best.pt` 起步，`lr=2e-4`（MoE 参数 ×2），峰值显存 4.98 GB，耗时 **~2h 05m**，val **`1.7744`**。
+2. **第 2 轮主线从零训（19.71M · 12 层每 2 层共享 FFN · 2 Epoch / 34,000 步）**：batch `8×2×1088 = 17,408 tok/step`，`lr=4e-4`（cosine → 5%），峰值显存 3.89 GB，耗时 **~2h 02m**，val `1.8439`。
+3. **第 3 轮 MoE 热升级续训（30.34M / 激活 23.26M · 1 Epoch / 17,000 步）**：L6–L9 升级 6 专家 Top-2 MoE，从第 2 轮 `best.pt` 起步，`lr=2e-4`（MoE 参数 ×2），峰值显存 4.98 GB，耗时 **~2h 05m**，val **`1.7744`**。
+4. **新增全量放大版（78.58M · 14 层全独立 `d=512, i=2048` · 2 Epoch）**：取消共享与 MoE，纳入 `corpus/new/`（`C13` 数学 + `SG` 故事）并对资料前缀做 1/3 保留清洗，单卡 3070 约 6 小时训完，`val_loss` 降至 **`1.6403`**（372 题盲测 `67.1%`），已拆分为 4 片 FP16 权重开源至 `weights/m14l_d512_78m_ep2_fp16/`（详情见 [weights/README.md](weights/README.md)）。
 
 ---
 
@@ -105,6 +135,7 @@
 
 ```bash
 pip install torch
+python examples/chat.py --model weights/m14l_d512_78m_ep2_fp16 --prompt "你好，你是谁？"
 python examples/chat.py --prompt "你好，你是谁？"
 python examples/chat.py --context "沅陵县位于湖南省怀化市西北部，沅水中游。" --prompt "沅陵县在哪个市？"
 ```
@@ -126,11 +157,11 @@ python tools/train_arena.py --config configs/m12l_d384_stdgqa_kv2_bicrossgate115
 ```text
 MiniYuanYuan/
 ├── corpus/       raw(24已训) / new(C13,SG未训) / samples(前100条) / vocab_v2.json / MANIFEST.json
-├── moxing/       模型定义（BiCrossGate / MoE / 标准 GQA 对照等）
+├── moxing/       模型定义（BiCrossGate / Hybrid / BiCrossV2 消融 / MoE / 标准 GQA 等）
 ├── tools/        tokenizer.py / data.py / train_arena.py / dashboard.py / eval_*.py
-├── configs/      架构配置文件
-├── weights/      两版 fp16 权重（m12l_d384_ep2_fp16.pt / m12l_d384_moe_ep3_fp16.pt）
-├── docs/         corpus.md / corpus_generation.md / architecture.md / results.md
+├── configs/      主线与 arena_1127 全套架构配置文件（p2~p7 等）
+├── weights/      三版 fp16 权重（m14l_d512_78m_ep2_fp16/ 四分片、19.71M、30.34M MoE）
+├── docs/         corpus.md / corpus_generation.md / architecture.md / results.md / arena_1127_report.md
 └── examples/     chat.py 最小可运行示例
 ```
 
@@ -256,5 +287,6 @@ MiniYuanYuan/
 
 - **Author's note**: Training a model from scratch had been a goal since LLMs first emerged. With only an RTX 3070, instead of standard GQA + SwiGLU, the baseline replaces SwiGLU's gate with a bilinear second-order cross gate (`BiCrossGateFFN`, outperforming standard SwiGLU at matched params via richer feature interactions). Still, standard Transformers work great too — **the corpus itself is the centerpiece of this repo**. Please drop a Star if you find it useful!
 - **Corpus composition & usage tip**: Full mixture of `1101` (an earlier-version line, kept open-source because the text is clean; 61.1% of training chars) and `1123` (38.9% + unseen `corpus/new/`: `C13` math & `SG` compositional stories). **Important**: RAG-grounding samples are heavily represented and often start with boilerplate prefixes like `请阅读下面这段资料：`; **strip ~70% of those prefixes (keep ~30%)** before training to avoid prefix overfitting.
+- **`BiCrossGateFFN` 12M fair arena benchmark ([full report](docs/arena_1127_report.md))**: Under a matched 12M-param, 108.4M-token, 2×2 fair arena (`d256 L10` vs `d192 L16`), our second-order bipolar cross-gating FFN (`BiCrossGateFFN`) consistently outperforms standard `SwiGLU` on 372 unseen blind-test prompts — achieving `407 vs 400` (`54.7% vs 53.8%`, `64W / 254T / 54L`) at strictly identical FLOPs (`19.876 PFLOPs`) and identical held-out CE (`2.2407`) in `d192 L16`, and `+18.0%` (`72.2% vs 54.2%`) on non-knowledge grounding/summarization/boundary tasks in `d256 L10`.
 - **30M strengths vs. parameter-bound limits**: At 30.34M params, it achieves **99.7% fluency**, strong single-passage RAG (`C07` val CE **0.209**), implicit color/material mapping, and 7/10 clear refusals. Limits in numeric trivia (7%), mid/late-sentence copy bias (40%), and multi-step state tracking (~20%) reflect the 30M capacity ceiling and should improve markedly at 150M–300M or 1B.
 - **License**: **CC BY-NC 4.0** (free for personal/educational/non-commercial use with attribution; commercial use prohibited without separate permission).

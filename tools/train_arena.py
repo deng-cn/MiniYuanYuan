@@ -21,7 +21,10 @@ from tokenizer import Tokenizer, default_vocab_path        # noqa: E402
 from model_1126 import LM1126, cfg_1126, param_report_1126 # noqa: E402
 from model_arena import LMArena, cfg_arena, param_report_arena  # noqa: E402
 from model_p4 import LMP4, cfg_p4, param_report_p4         # noqa: E402
+from model_p5_hybrid import LMP5Hybrid, cfg_p5_hybrid, param_report_p5_hybrid  # noqa: E402
 from model_moe import LMMoE, cfg_moe, param_report_moe, upcycle_from_p4_state  # noqa: E402
+from model_diffq import LMDiffQPool, cfg_diffq, param_report_diffq  # noqa: E402
+from model_bicross_v2 import LMBiCrossV2, cfg_bicross_v2, param_report_bicross_v2  # noqa: E402
 
 PROMPTS = ["苹果是什么？", "因为下雨了，所以", "你好，你是谁？"]
 
@@ -230,10 +233,22 @@ def main():
     raw["grad_checkpoint"] = (args.grad_ckpt != "none")
 
     arch_type = str(raw.get("arch_type") or "4q_dualffn").lower()
-    if arch_type == "std_gqa_bicross_moe":
+    if arch_type == "std_gqa_diff_qpool":
+        cfg = cfg_diffq(**raw)
+        model = LMDiffQPool(cfg).to(device)
+        param_report_diffq(model, cfg)
+    elif arch_type == "std_gqa_bicross_v2":
+        cfg = cfg_bicross_v2(**raw)
+        model = LMBiCrossV2(cfg).to(device)
+        param_report_bicross_v2(model, cfg)
+    elif arch_type == "std_gqa_bicross_moe":
         cfg = cfg_moe(**raw)
         model = LMMoE(cfg).to(device)
         param_report_moe(model, cfg)
+    elif arch_type == "std_gqa_hybrid_bicross":
+        cfg = cfg_p5_hybrid(**raw)
+        model = LMP5Hybrid(cfg).to(device)
+        param_report_p5_hybrid(model, cfg)
     elif arch_type == "std_gqa_bicross_gate":
         cfg = cfg_p4(**raw)
         model = LMP4(cfg).to(device)
@@ -409,8 +424,12 @@ def main():
                 vl, gstats, mstats = evaluate(model, va, args.batch, device, amp_dtype)
                 gs_txt = summarize_gate_stats(gstats)
                 ms_txt = summarize_moe_stats(mstats)
-                extra_txt = " ｜ ".join(x for x in (gs_txt, ms_txt) if x)
+                dl_vals = model.diff_lambda_summary() if hasattr(model, "diff_lambda_summary") else None
+                dl_txt = ("diff_lam=[%.2f..%.2f]" % (min(dl_vals), max(dl_vals))) if dl_vals else ""
+                extra_txt = " ｜ ".join(x for x in (gs_txt, ms_txt, dl_txt) if x)
                 rec_v = {"step": step, "val_loss": round(vl, 4), "t": now()}
+                if dl_vals:
+                    rec_v["diff_lambdas"] = [round(v, 4) for v in dl_vals]
                 if gs_txt:
                     rec_v["gate_summary"] = gs_txt
                     rec_v["gate_layers"] = [

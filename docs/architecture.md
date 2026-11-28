@@ -129,12 +129,17 @@ MoE 版本身是有效的（1.7744 确实是三期里最好的），但它回答
 
 | 文件 | 作用 |
 |---|---|
-| `moxing/model_p4.py` | 第 1/2 轮的 12 层模型（`LMP4` / `cfg_p4`） |
-| `moxing/model_moe.py` | 第 3 轮 MoE（`LMMoE` / `cfg_moe`） |
-| `moxing/model_arena.py` | 竞技场 3/5 号对照架构（标准 GQA 基线） |
-| `moxing/model_1126.py` | 竞技场 1/2 号对照架构（4Q-NoKV 变体） |
+| `moxing/model_p4.py` | 纯 `BiCrossGateFFN` 架构（`LMP4` / `cfg_p4`，含 12 层 19.71M 及 `arena_1127` 4 号/7 号） |
+| `moxing/model_moe.py` | 第 3 轮 MoE 稀疏热升级（`LMMoE` / `cfg_moe`） |
+| `moxing/model_arena.py` | 标准 GQA + `SwiGLU` 基线（`LMArena`，含 `arena_1127` 1 号/6 号） |
+| `moxing/model_p5_hybrid.py` | `SwiGLU` 与 `BiCrossGate` 交替混合架构（`LMP5Hybrid`，`arena_1127` 5 号） |
+| `moxing/model_bicross_v2.py` | `BiCrossV2` 负消融对照（外加 `SiLU` + 残差旁路，`arena_1127` 3 号） |
+| `moxing/model_diffq.py` | `DiffQ Pool` 注意力对照（`arena_1127` 2 号） |
+| `moxing/model_1126.py` | 早期竞技场对照架构（4Q-NoKV 变体） |
 | `moxing/quant.py` | QAT 伪量化（int4 权重 / int8 激活，STE） |
-| `tools/train_arena.py` | 统一训练入口 |
+| `tools/train_arena.py` | 统一训练入口（支持上述全部架构配置） |
 | `tools/data.py` | 编码模板与打包器 |
 | `tools/tokenizer.py` | 分词器 |
-| `configs/*.json` | 各架构配置 |
+| `configs/*.json` | 各架构与 `arena_1127` 7 位选手配置文件 |
+
+> 关于 `BiCrossGateFFN` 与传统 `SwiGLU` 在 12M 同参数、同算力（2×2 构型）下的完整数学对比、负消融验证及 372 题盲测详评，见 **[docs/arena_1127_report.md](arena_1127_report.md)**。
